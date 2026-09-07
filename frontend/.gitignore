@@ -1,0 +1,17 @@
+# Local environment files
+*.local
+
+# Backend secrets and dependencies
+/backend/.env
+/backend/node_modules/
+
+# Editor files
+.vscode/
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
