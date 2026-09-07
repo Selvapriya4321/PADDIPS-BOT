@@ -19,7 +19,12 @@ const client = new OpenAI({
 // MIDDLEWARE
 // =====================================================
 
-app.use(cors());
+app.use(
+  cors({
+    origin: "*",
+  })
+);
+
 app.use(express.json());
 
 // =====================================================
@@ -47,7 +52,10 @@ const upload = multer({
 // =====================================================
 
 app.get("/", (req, res) => {
-  res.send("AI Learning Assistant Backend is Running 🚀");
+  res.json({
+    success: true,
+    message: "AI Learning Assistant Backend is Running 🚀",
+  });
 });
 
 // =====================================================
@@ -87,14 +95,15 @@ app.post("/api/chat", async (req, res) => {
     });
 
     res.json({
+      success: true,
       reply: response.output_text,
     });
   } catch (error) {
     console.error("AI Chat Error:", error);
 
     res.status(500).json({
-      reply:
-        "Sorry, I could not connect to the AI right now.",
+      success: false,
+      reply: "Sorry, I could not connect to the AI right now.",
       error: error.message,
     });
   }
@@ -119,7 +128,9 @@ app.post("/api/quiz", async (req, res) => {
     // ---------------------------------------------------
 
     const selectedTopic =
-      topic && typeof topic === "string" && topic.trim()
+      topic &&
+      typeof topic === "string" &&
+      topic.trim()
         ? topic.trim()
         : "Computer Science";
 
@@ -202,6 +213,7 @@ Return exactly this structure:
       console.error("Quiz JSON Parse Error:", parseError);
 
       return res.status(500).json({
+        success: false,
         error: "AI returned invalid quiz JSON.",
         raw: response.output_text,
       });
@@ -217,6 +229,7 @@ Return exactly this structure:
       !Array.isArray(quiz.questions)
     ) {
       return res.status(500).json({
+        success: false,
         error: "Invalid quiz response from AI.",
       });
     }
@@ -231,6 +244,7 @@ Return exactly this structure:
       );
 
       return res.status(500).json({
+        success: false,
         error: `AI generated ${quiz.questions.length} questions instead of ${quizCount}. Please generate again.`,
         generated: quiz.questions.length,
         requested: quizCount,
@@ -250,7 +264,10 @@ Return exactly this structure:
         typeof q.question !== "string"
       ) {
         return res.status(500).json({
-          error: `Invalid question text at question ${i + 1}.`,
+          success: false,
+          error: `Invalid question text at question ${
+            i + 1
+          }.`,
         });
       }
 
@@ -260,19 +277,25 @@ Return exactly this structure:
         q.options.length !== 4
       ) {
         return res.status(500).json({
-          error: `Question ${i + 1} must contain exactly 4 options.`,
+          success: false,
+          error: `Question ${
+            i + 1
+          } must contain exactly 4 options.`,
         });
       }
 
-      // Check every option is string
+      // Check every option
       for (let j = 0; j < q.options.length; j++) {
         if (
           typeof q.options[j] !== "string" ||
           !q.options[j].trim()
         ) {
           return res.status(500).json({
+            success: false,
             error:
-              `Invalid option at question ${i + 1}, option ${j + 1}.`,
+              `Invalid option at question ${
+                i + 1
+              }, option ${j + 1}.`,
           });
         }
       }
@@ -283,16 +306,22 @@ Return exactly this structure:
         typeof q.answer !== "string"
       ) {
         return res.status(500).json({
+          success: false,
           error:
-            `Question ${i + 1} does not contain a valid answer.`,
+            `Question ${
+              i + 1
+            } does not contain a valid answer.`,
         });
       }
 
-      // Answer must exactly match an option
+      // Answer must match an option
       if (!q.options.includes(q.answer)) {
         return res.status(500).json({
+          success: false,
           error:
-            `Correct answer for question ${i + 1} does not match any option.`,
+            `Correct answer for question ${
+              i + 1
+            } does not match any option.`,
         });
       }
     }
@@ -315,6 +344,7 @@ Return exactly this structure:
     console.error("AI Quiz Error:", error);
 
     res.status(500).json({
+      success: false,
       error: "Quiz generation failed.",
       message: error.message,
     });
@@ -335,24 +365,38 @@ app.post("/api/study-plan", async (req, res) => {
     console.log("Days:", days);
     console.log("=================================");
 
+    // ---------------------------------------------------
+    // VALIDATE SUBJECT
+    // ---------------------------------------------------
+
     if (
       !subject ||
       typeof subject !== "string" ||
       !subject.trim()
     ) {
       return res.status(400).json({
+        success: false,
         error: "Please enter a subject.",
       });
     }
 
+    // ---------------------------------------------------
+    // VALIDATE DAYS
+    // ---------------------------------------------------
+
     if (!days || Number(days) <= 0) {
       return res.status(400).json({
+        success: false,
         error: "Please enter a valid number of days.",
       });
     }
 
     const selectedSubject = subject.trim();
     const selectedDays = Number(days);
+
+    // ---------------------------------------------------
+    // AI STUDY PLAN
+    // ---------------------------------------------------
 
     const response = await client.responses.create({
       model: "gpt-5.6-luna",
@@ -405,14 +449,11 @@ Return plain text only.
       plan: response.output_text,
     });
   } catch (error) {
-    console.error(
-      "Study Plan Error:",
-      error
-    );
+    console.error("Study Plan Error:", error);
 
     res.status(500).json({
-      error:
-        "Study plan generation failed.",
+      success: false,
+      error: "Study plan generation failed.",
       message: error.message,
     });
   }
@@ -429,17 +470,9 @@ app.post(
     let parser = null;
 
     try {
-      console.log(
-        "================================="
-      );
-
-      console.log(
-        "PDF upload request received 📄"
-      );
-
-      console.log(
-        "================================="
-      );
+      console.log("=================================");
+      console.log("PDF upload request received 📄");
+      console.log("=================================");
 
       // -------------------------------------------------
       // CHECK FILE
@@ -447,6 +480,7 @@ app.post(
 
       if (!req.file) {
         return res.status(400).json({
+          success: false,
           error: "Please select a PDF file.",
         });
       }
@@ -476,8 +510,8 @@ app.post(
         "application/pdf"
       ) {
         return res.status(400).json({
-          error:
-            "Only PDF files are supported.",
+          success: false,
+          error: "Only PDF files are supported.",
         });
       }
 
@@ -485,9 +519,7 @@ app.post(
       // CREATE PDF PARSER
       // -------------------------------------------------
 
-      console.log(
-        "Reading PDF..."
-      );
+      console.log("Reading PDF...");
 
       parser = new PDFParse({
         data: req.file.buffer,
@@ -497,8 +529,7 @@ app.post(
       // EXTRACT TEXT
       // -------------------------------------------------
 
-      const pdfData =
-        await parser.getText();
+      const pdfData = await parser.getText();
 
       const extractedText =
         pdfData.text || "";
@@ -523,6 +554,7 @@ app.post(
 
       if (!extractedText.trim()) {
         return res.status(400).json({
+          success: false,
           error:
             "The PDF does not contain readable text.",
         });
@@ -554,9 +586,9 @@ app.post(
       );
 
       res.status(500).json({
+        success: false,
         error:
           "PDF processing failed.",
-
         message:
           error.message,
       });
@@ -592,12 +624,14 @@ app.use(
     if (error instanceof multer.MulterError) {
       if (error.code === "LIMIT_FILE_SIZE") {
         return res.status(400).json({
+          success: false,
           error:
             "PDF size must be less than 10 MB.",
         });
       }
 
       return res.status(400).json({
+        success: false,
         error: error.message,
       });
     }
@@ -608,6 +642,7 @@ app.use(
         "Only PDF files are supported."
     ) {
       return res.status(400).json({
+        success: false,
         error:
           "Only PDF files are supported.",
       });
@@ -629,6 +664,7 @@ app.use(
     );
 
     res.status(500).json({
+      success: false,
       error: "Internal server error.",
       message: error.message,
     });
@@ -639,16 +675,15 @@ app.use(
 // START SERVER
 // =====================================================
 
-const PORT = 5000;
+// IMPORTANT FOR RENDER
+const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log("");
   console.log("=================================");
   console.log("🤖 PADDIPS BOT BACKEND");
   console.log("=================================");
-  console.log(
-    `🚀 Server running on http://localhost:${PORT}`
-  );
+  console.log(`🚀 Server running on port ${PORT}`);
   console.log("");
   console.log("Available APIs:");
   console.log("POST /api/chat");
