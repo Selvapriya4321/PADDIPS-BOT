@@ -15,7 +15,33 @@ const PORT = process.env.PORT || 5000;
 const GEMINI_MODEL =
   process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
-app.use(cors({ origin: "*" }));
+const ALLOWED_ORIGINS = [
+  "https://selvapriya4321.github.io",
+];
+
+// =====================================================
+// CORS CONFIGURATION — IMPORTANT
+// Must be before all API routes
+// =====================================================
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow GitHub Pages and requests without an Origin header.
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+      return callback(null, true);
+    }
+
+    console.warn("Blocked CORS origin:", origin);
+    return callback(new Error("Origin not allowed by CORS"));
+  },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
+
 app.use(express.json({ limit: "2mb" }));
 
 // =====================================================
@@ -89,7 +115,7 @@ async function generateAI(prompt, systemInstruction = "") {
 }
 
 // =====================================================
-// TEST BACKEND
+// BACKEND HEALTH CHECK
 // GET /
 // =====================================================
 
@@ -110,7 +136,6 @@ app.get("/", (req, res) => {
 // =====================================================
 // AI CHAT
 // POST /api/chat
-// Request: { "message": "Explain DBMS" }
 // =====================================================
 
 app.post("/api/chat", async (req, res) => {
@@ -165,7 +190,6 @@ app.post("/api/chat", async (req, res) => {
 // =====================================================
 // AI QUIZ
 // POST /api/quiz
-// Request: { "topic": "DBMS", "count": 5 }
 // =====================================================
 
 app.post("/api/quiz", async (req, res) => {
@@ -284,7 +308,6 @@ Required format:
 // =====================================================
 // AI STUDY PLAN
 // POST /api/study-plan
-// Request: { "subject": "JavaScript", "days": 7 }
 // =====================================================
 
 app.post("/api/study-plan", async (req, res) => {
