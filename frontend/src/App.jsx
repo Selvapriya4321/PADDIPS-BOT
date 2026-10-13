@@ -2,10 +2,8 @@
 import { useEffect, useState } from "react";
 import "./App.css";
 
-const API_URL = (
-  import.meta.env.VITE_API_URL ||
-  "https://raddips-bot-1.onrender.com"
-).replace(/\/+$/, "");
+const API_URL = "https://paddips-bot.onrender.com";
+
 
 async function apiRequest(path, options = {}) {
   const response = await fetch(`${API_URL}${path}`, options);
