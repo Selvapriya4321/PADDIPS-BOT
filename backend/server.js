@@ -7,9 +7,9 @@ require("dotenv").config();
 
 const app = express();
 
-// =====================================================
-// CONFIGURATION
-// =====================================================
+// ==================================================
+// 1. CONFIGURATION
+// ==================================================
 
 const PORT = process.env.PORT || 5000;
 const GEMINI_MODEL =
@@ -17,39 +17,43 @@ const GEMINI_MODEL =
 
 const ALLOWED_ORIGINS = [
   "https://selvapriya4321.github.io",
+  "http://localhost:5173",
+  "http://localhost:3000",
 ];
 
-// =====================================================
-// CORS CONFIGURATION — IMPORTANT
-// Must be before all API routes
-// =====================================================
+// ==================================================
+// 2. CORS
+// ==================================================
 
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow GitHub Pages and requests without an Origin header.
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
-      return callback(null, true);
-    }
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+        return callback(null, true);
+      }
 
-    console.warn("Blocked CORS origin:", origin);
-    return callback(new Error("Origin not allowed by CORS"));
-  },
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  optionsSuccessStatus: 204,
-};
-
-app.use(cors(corsOptions));
-app.options(/.*/, cors(corsOptions));
+      console.warn("Blocked CORS origin:", origin);
+      return callback(new Error("Origin not allowed by CORS"));
+    },
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 
 app.use(express.json({ limit: "2mb" }));
 
-// =====================================================
-// GEMINI AI HELPER
-// =====================================================
+// ==================================================
+// 3. GEMINI AI HELPER
+// ==================================================
 
 async function generateAI(prompt, systemInstruction = "") {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+
+  // Never print the actual API key.
+  console.log(
+    "Gemini API key configured:",
+    Boolean(apiKey)
+  );
 
   if (!apiKey) {
     throw new Error(
@@ -89,40 +93,49 @@ async function generateAI(prompt, systemInstruction = "") {
     signal: AbortSignal.timeout(90000),
   });
 
-  const data = await response.json();
+  const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    console.error("Gemini API error:", data.error || data);
+    const apiMessage =
+      data?.error?.message ||
+      `Gemini API request failed: HTTP ${response.status}`;
 
-    throw new Error(
-      data.error?.message ||
-        `Gemini API request failed: HTTP ${response.status}`
-    );
+    console.error("Gemini API error:", {
+      status: response.status,
+      message: apiMessage,
+    });
+
+    throw new Error(apiMessage);
   }
 
-  const answer = (data.candidates?.[0]?.content?.parts || [])
+  const answer = (
+    data.candidates?.[0]?.content?.parts || []
+  )
     .map((part) => part.text || "")
     .join("")
     .trim();
 
   if (!answer) {
-    throw new Error(
-      "Gemini returned no text. Check model availability and API usage limits."
-    );
+    const reason =
+      data.promptFeedback?.blockReason ||
+      data.candidates?.[0]?.finishReason ||
+      "No text returned";
+
+    throw new Error(`Gemini returned no text: ${reason}`);
   }
 
   return answer;
 }
 
-// =====================================================
-// BACKEND HEALTH CHECK
+// ==================================================
+// 4. HEALTH CHECK
 // GET /
-// =====================================================
+// ==================================================
 
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: "PADDIPS BOT Backend is Running 🚀",
+    message: "PADDIPS BOT Backend is Running",
     model: GEMINI_MODEL,
     endpoints: [
       "POST /api/chat",
@@ -133,16 +146,20 @@ app.get("/", (req, res) => {
   });
 });
 
-// =====================================================
-// AI CHAT
+// ==================================================
+// 5. AI CHAT
 // POST /api/chat
-// =====================================================
+// Body: { "message": "Explain HTML" }
+// ==================================================
 
 app.post("/api/chat", async (req, res) => {
   try {
     const { message } = req.body || {};
 
-    if (typeof message !== "string" || !message.trim()) {
+    if (
+      typeof message !== "string" ||
+      !message.trim()
+    ) {
       return res.status(400).json({
         success: false,
         reply: "Please enter a question.",
@@ -158,17 +175,20 @@ app.post("/api/chat", async (req, res) => {
       });
     }
 
-    console.log("CHAT REQUEST:", userMessage.slice(0, 150));
+    console.log(
+      "CHAT REQUEST:",
+      userMessage.slice(0, 100)
+    );
 
     const reply = await generateAI(
       userMessage,
       [
         "You are PADDIPS BOT, an AI Learning and Study Assistant.",
-        "Help college students learn programming, computer science,",
-        "databases, mathematics, and other academic subjects.",
-        "Explain clearly using simple English, step-by-step instructions,",
-        "and practical examples when helpful.",
-        "If a student is a beginner, avoid unnecessary jargon.",
+        "Help students learn programming, computer science,",
+        "databases, mathematics, and academic subjects.",
+        "Explain in simple English with clear step-by-step instructions.",
+        "Use practical examples when helpful.",
+        "For beginners, avoid unnecessary jargon.",
       ].join(" ")
     );
 
@@ -187,10 +207,11 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-// =====================================================
-// AI QUIZ
+// ==================================================
+// 6. AI QUIZ
 // POST /api/quiz
-// =====================================================
+// Body: { "topic": "HTML", "count": 5 }
+// ==================================================
 
 app.post("/api/quiz", async (req, res) => {
   try {
@@ -204,7 +225,9 @@ app.post("/api/quiz", async (req, res) => {
     const requestedCount = Number(count);
     const allowedCounts = [5, 10, 15, 20];
 
-    const quizCount = allowedCounts.includes(requestedCount)
+    const quizCount = allowedCounts.includes(
+      requestedCount
+    )
       ? requestedCount
       : 5;
 
@@ -214,12 +237,10 @@ ${selectedTopic}
 
 Rules:
 - Suitable for college students.
-- Each question has exactly four distinct options.
-- Each question has exactly one correct answer.
-- The answer must exactly match one of the options.
-- Avoid duplicate questions.
-- Do not include explanations.
-- Return only valid JSON, without Markdown fences.
+- Exactly four options per question.
+- Exactly one correct answer.
+- The answer must match one of the options.
+- Return valid JSON only, without Markdown fences.
 
 Required format:
 {
@@ -248,8 +269,6 @@ Required format:
     try {
       quiz = JSON.parse(cleanedText);
     } catch {
-      console.error("Invalid quiz JSON returned by Gemini.");
-
       return res.status(502).json({
         success: false,
         error: "AI returned invalid quiz data. Please try again.",
@@ -283,7 +302,7 @@ Required format:
       ) {
         return res.status(502).json({
           success: false,
-          error: `Invalid data in quiz question ${index + 1}. Please try again.`,
+          error: `Invalid data in quiz question ${index + 1}.`,
         });
       }
     }
@@ -305,16 +324,20 @@ Required format:
   }
 });
 
-// =====================================================
-// AI STUDY PLAN
+// ==================================================
+// 7. AI STUDY PLAN
 // POST /api/study-plan
-// =====================================================
+// Body: { "subject": "JavaScript", "days": 7 }
+// ==================================================
 
 app.post("/api/study-plan", async (req, res) => {
   try {
     const { subject, days } = req.body || {};
 
-    if (typeof subject !== "string" || !subject.trim()) {
+    if (
+      typeof subject !== "string" ||
+      !subject.trim()
+    ) {
       return res.status(400).json({
         success: false,
         error: "Please enter a subject.",
@@ -342,21 +365,21 @@ Create a practical study plan for a college student.
 Subject: ${selectedSubject}
 Duration: ${selectedDays} days
 
-For every day, include:
+For every day include:
 1. Day number
 2. Topic to study
 3. Learning objectives
-4. A practice activity
-5. A revision activity
+4. Practice activity
+5. Revision activity
 
 Use simple English and a progressive learning order.
-Include all days from Day 1 through Day ${selectedDays}.
+Include all days from Day 1 to Day ${selectedDays}.
 Return plain text, not JSON.
 `;
 
     const plan = await generateAI(
       prompt,
-      "You are a helpful study planner for college students. Create clear, realistic plans."
+      "You are a helpful study planner for college students."
     );
 
     return res.json({
@@ -376,29 +399,32 @@ Return plain text, not JSON.
   }
 });
 
-// =====================================================
-// PDF UPLOAD CONFIGURATION
-// =====================================================
+// ==================================================
+// 8. PDF UPLOAD CONFIGURATION
+// Maximum file size: 10 MB
+// Form field name: material
+// ==================================================
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 10 * 1024 * 1024,
   },
-  fileFilter: (req, file, cb) => {
+  fileFilter: (req, file, callback) => {
     if (file.mimetype !== "application/pdf") {
-      return cb(new Error("Only PDF files are supported."));
+      return callback(
+        new Error("Only PDF files are supported.")
+      );
     }
 
-    cb(null, true);
+    callback(null, true);
   },
 });
 
-// =====================================================
-// PDF TEXT EXTRACTION
+// ==================================================
+// 9. PDF TEXT EXTRACTION
 // POST /api/upload-material
-// Form field: material
-// =====================================================
+// ==================================================
 
 app.post(
   "/api/upload-material",
@@ -451,22 +477,32 @@ app.post(
         message: error.message,
       });
     } finally {
-      if (parser && typeof parser.destroy === "function") {
+      if (
+        parser &&
+        typeof parser.destroy === "function"
+      ) {
         try {
           await parser.destroy();
         } catch (error) {
-          console.error("PDF cleanup error:", error.message);
+          console.error(
+            "PDF cleanup error:",
+            error.message
+          );
         }
       }
     }
   }
 );
 
-// =====================================================
-// UPLOAD AND MULTER ERROR HANDLER
-// =====================================================
+// ==================================================
+// 10. ERROR HANDLER
+// ==================================================
 
 app.use((error, req, res, next) => {
+  if (res.headersSent) {
+    return next(error);
+  }
+
   if (error instanceof multer.MulterError) {
     const message =
       error.code === "LIMIT_FILE_SIZE"
@@ -479,26 +515,23 @@ app.use((error, req, res, next) => {
     });
   }
 
-  if (error.message === "Only PDF files are supported.") {
+  if (
+    error.message === "Only PDF files are supported."
+  ) {
     return res.status(400).json({
       success: false,
       error: error.message,
     });
   }
 
-  return next(error);
-});
-
-// =====================================================
-// GENERAL ERROR HANDLER
-// =====================================================
-
-app.use((error, req, res, next) => {
-  console.error("Unhandled Server Error:", error);
-
-  if (res.headersSent) {
-    return next(error);
+  if (error.message === "Origin not allowed by CORS") {
+    return res.status(403).json({
+      success: false,
+      error: "This website is not allowed to access the API.",
+    });
   }
+
+  console.error("Unhandled Server Error:", error);
 
   return res.status(500).json({
     success: false,
@@ -506,14 +539,14 @@ app.use((error, req, res, next) => {
   });
 });
 
-// =====================================================
-// START SERVER
-// =====================================================
+// ==================================================
+// 11. START SERVER
+// ==================================================
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log("==================================");
-  console.log("🤖 PADDIPS BOT BACKEND");
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🧠 Gemini model: ${GEMINI_MODEL}`);
+  console.log("PADDIPS BOT BACKEND STARTED");
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Gemini model: ${GEMINI_MODEL}`);
   console.log("==================================");
 });
