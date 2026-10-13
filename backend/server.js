@@ -8,7 +8,18 @@ require("dotenv").config();
 const app = express();
 
 // =====================================================
-// GEMINI AI CONFIGURATION
+// CONFIGURATION
+// =====================================================
+
+const PORT = process.env.PORT || 5000;
+const GEMINI_MODEL =
+  process.env.GEMINI_MODEL || "gemini-2.5-flash";
+
+app.use(cors({ origin: "*" }));
+app.use(express.json({ limit: "2mb" }));
+
+// =====================================================
+// GEMINI AI HELPER
 // =====================================================
 
 async function generateAI(prompt, systemInstruction = "") {
@@ -16,15 +27,13 @@ async function generateAI(prompt, systemInstruction = "") {
 
   if (!apiKey) {
     throw new Error(
-      "GEMINI_API_KEY is missing. Add it in Render Environment."
+      "GEMINI_API_KEY is missing. Add it in Render Environment Variables."
     );
   }
 
-  // Use a model supported by your Gemini API account.
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-
   const url =
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    `https://generativelanguage.googleapis.com/v1beta/models/` +
+    `${GEMINI_MODEL}:generateContent`;
 
   const requestBody = {
     contents: [
@@ -51,6 +60,7 @@ async function generateAI(prompt, systemInstruction = "") {
       "x-goog-api-key": apiKey,
     },
     body: JSON.stringify(requestBody),
+    signal: AbortSignal.timeout(90000),
   });
 
   const data = await response.json();
@@ -59,7 +69,8 @@ async function generateAI(prompt, systemInstruction = "") {
     console.error("Gemini API error:", data.error || data);
 
     throw new Error(
-      data.error?.message || `Gemini API failed with status ${response.status}`
+      data.error?.message ||
+        `Gemini API request failed: HTTP ${response.status}`
     );
   }
 
@@ -70,7 +81,7 @@ async function generateAI(prompt, systemInstruction = "") {
 
   if (!answer) {
     throw new Error(
-      "Gemini returned no text. Try the request again."
+      "Gemini returned no text. Check model availability and API usage limits."
     );
   }
 
@@ -78,49 +89,28 @@ async function generateAI(prompt, systemInstruction = "") {
 }
 
 // =====================================================
-// MIDDLEWARE
-// =====================================================
-
-app.use(
-  cors({
-    origin: "*",
-  })
-);
-
-app.use(express.json({ limit: "2mb" }));
-
-// =====================================================
-// PDF UPLOAD CONFIGURATION
-// =====================================================
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 10 * 1024 * 1024,
-  },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype === "application/pdf") {
-      cb(null, true);
-    } else {
-      cb(new Error("Only PDF files are supported."));
-    }
-  },
-});
-
-// =====================================================
 // TEST BACKEND
+// GET /
 // =====================================================
 
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: "AI Learning Assistant Backend is Running 🚀",
+    message: "PADDIPS BOT Backend is Running 🚀",
+    model: GEMINI_MODEL,
+    endpoints: [
+      "POST /api/chat",
+      "POST /api/quiz",
+      "POST /api/study-plan",
+      "POST /api/upload-material",
+    ],
   });
 });
 
 // =====================================================
 // AI CHAT
 // POST /api/chat
+// Request: { "message": "Explain DBMS" }
 // =====================================================
 
 app.post("/api/chat", async (req, res) => {
@@ -134,11 +124,27 @@ app.post("/api/chat", async (req, res) => {
       });
     }
 
-    console.log("CHAT REQUEST:", message.trim());
+    const userMessage = message.trim();
+
+    if (userMessage.length > 10000) {
+      return res.status(400).json({
+        success: false,
+        reply: "Please keep your question under 10,000 characters.",
+      });
+    }
+
+    console.log("CHAT REQUEST:", userMessage.slice(0, 150));
 
     const reply = await generateAI(
-      message.trim(),
-      "You are PADDIPS BOT, an AI Learning and Study Assistant. Explain answers clearly and simply for college students. Use step-by-step explanations and examples when helpful."
+      userMessage,
+      [
+        "You are PADDIPS BOT, an AI Learning and Study Assistant.",
+        "Help college students learn programming, computer science,",
+        "databases, mathematics, and other academic subjects.",
+        "Explain clearly using simple English, step-by-step instructions,",
+        "and practical examples when helpful.",
+        "If a student is a beginner, avoid unnecessary jargon.",
+      ].join(" ")
     );
 
     return res.json({
@@ -150,7 +156,7 @@ app.post("/api/chat", async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      reply: "Sorry, I could not connect to the AI right now.",
+      reply: "Sorry, I could not generate an AI response.",
       error: error.message,
     });
   }
@@ -159,6 +165,7 @@ app.post("/api/chat", async (req, res) => {
 // =====================================================
 // AI QUIZ
 // POST /api/quiz
+// Request: { "topic": "DBMS", "count": 5 }
 // =====================================================
 
 app.post("/api/quiz", async (req, res) => {
@@ -177,34 +184,25 @@ app.post("/api/quiz", async (req, res) => {
       ? requestedCount
       : 5;
 
-    console.log("QUIZ REQUEST:", selectedTopic, quizCount);
-
-    const quizPrompt = `
+    const prompt = `
 Create exactly ${quizCount} multiple-choice questions about:
 ${selectedTopic}
 
-Requirements:
-1. Generate exactly ${quizCount} questions.
-2. Each question must have exactly four options.
-3. There must be exactly one correct answer.
-4. The answer must exactly match one of the options.
-5. Questions should suit college students.
-6. Avoid duplicate questions.
-7. Cover different concepts.
-8. Do not include explanations.
-9. Return only valid JSON. Do not use Markdown code fences.
+Rules:
+- Suitable for college students.
+- Each question has exactly four distinct options.
+- Each question has exactly one correct answer.
+- The answer must exactly match one of the options.
+- Avoid duplicate questions.
+- Do not include explanations.
+- Return only valid JSON, without Markdown fences.
 
-Return this structure:
+Required format:
 {
   "questions": [
     {
       "question": "Question text",
-      "options": [
-        "Option A",
-        "Option B",
-        "Option C",
-        "Option D"
-      ],
+      "options": ["Option A", "Option B", "Option C", "Option D"],
       "answer": "Option A"
     }
   ]
@@ -212,90 +210,64 @@ Return this structure:
 `;
 
     const quizText = await generateAI(
-      quizPrompt,
-      "You are a careful educational quiz generator. Follow the requested JSON format exactly."
+      prompt,
+      "You are an educational quiz generator. Return valid JSON only."
     );
 
-    // Remove Markdown fences if the model includes them.
     const cleanedText = quizText
       .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/, "")
+      .replace(/\s*```$/i, "")
       .trim();
 
     let quiz;
 
     try {
       quiz = JSON.parse(cleanedText);
-    } catch (parseError) {
-      console.error("Quiz JSON Parse Error:", parseError.message);
+    } catch {
+      console.error("Invalid quiz JSON returned by Gemini.");
 
-      return res.status(500).json({
+      return res.status(502).json({
         success: false,
-        error: "AI returned invalid quiz JSON. Please try again.",
+        error: "AI returned invalid quiz data. Please try again.",
       });
     }
 
-    if (!quiz || !Array.isArray(quiz.questions)) {
-      return res.status(500).json({
+    if (
+      !quiz ||
+      !Array.isArray(quiz.questions) ||
+      quiz.questions.length !== quizCount
+    ) {
+      return res.status(502).json({
         success: false,
-        error: "Invalid quiz response from AI.",
+        error: "AI returned an incomplete quiz. Please try again.",
       });
     }
 
-    if (quiz.questions.length !== quizCount) {
-      return res.status(500).json({
-        success: false,
-        error: `AI generated ${quiz.questions.length} questions instead of ${quizCount}. Please try again.`,
-        generated: quiz.questions.length,
-        requested: quizCount,
-      });
-    }
-
-    for (let i = 0; i < quiz.questions.length; i++) {
-      const question = quiz.questions[i];
-
+    for (const [index, question] of quiz.questions.entries()) {
       if (
         !question ||
         typeof question.question !== "string" ||
-        !question.question.trim()
-      ) {
-        return res.status(500).json({
-          success: false,
-          error: `Invalid question text at question ${i + 1}.`,
-        });
-      }
-
-      if (
+        !question.question.trim() ||
         !Array.isArray(question.options) ||
         question.options.length !== 4 ||
         question.options.some(
           (option) =>
             typeof option !== "string" || !option.trim()
-        )
-      ) {
-        return res.status(500).json({
-          success: false,
-          error: `Question ${i + 1} must contain exactly four valid options.`,
-        });
-      }
-
-      if (
+        ) ||
         typeof question.answer !== "string" ||
         !question.options.includes(question.answer)
       ) {
-        return res.status(500).json({
+        return res.status(502).json({
           success: false,
-          error: `The correct answer for question ${i + 1} must match one of its options.`,
+          error: `Invalid data in quiz question ${index + 1}. Please try again.`,
         });
       }
     }
 
-    console.log(`Quiz generated successfully: ${quizCount} questions`);
-
     return res.json({
       success: true,
-      count: quizCount,
       topic: selectedTopic,
+      count: quizCount,
       questions: quiz.questions,
     });
   } catch (error) {
@@ -312,16 +284,14 @@ Return this structure:
 // =====================================================
 // AI STUDY PLAN
 // POST /api/study-plan
+// Request: { "subject": "JavaScript", "days": 7 }
 // =====================================================
 
 app.post("/api/study-plan", async (req, res) => {
   try {
     const { subject, days } = req.body || {};
 
-    if (
-      typeof subject !== "string" ||
-      !subject.trim()
-    ) {
+    if (typeof subject !== "string" || !subject.trim()) {
       return res.status(400).json({
         success: false,
         error: "Please enter a subject.",
@@ -333,50 +303,43 @@ app.post("/api/study-plan", async (req, res) => {
     if (
       !Number.isInteger(selectedDays) ||
       selectedDays < 1 ||
-      selectedDays > 365
+      selectedDays > 60
     ) {
       return res.status(400).json({
         success: false,
-        error: "Please enter a number of days from 1 to 365.",
+        error: "Choose a study plan between 1 and 60 days.",
       });
     }
 
     const selectedSubject = subject.trim();
 
-    console.log(
-      "STUDY PLAN REQUEST:",
-      selectedSubject,
-      selectedDays
-    );
-
-    const studyPrompt = `
-Create a simple, practical study plan for a college student.
+    const prompt = `
+Create a practical study plan for a college student.
 
 Subject: ${selectedSubject}
-Number of days: ${selectedDays}
+Duration: ${selectedDays} days
 
-For every day include:
-- Day number
-- Topic to study
-- What to learn
-- Practice activity
-- Revision activity
+For every day, include:
+1. Day number
+2. Topic to study
+3. Learning objectives
+4. A practice activity
+5. A revision activity
 
-Make the plan easy to understand.
-Cover the subject progressively.
-Continue until Day ${selectedDays}.
-Return plain text only.
+Use simple English and a progressive learning order.
+Include all days from Day 1 through Day ${selectedDays}.
+Return plain text, not JSON.
 `;
 
     const plan = await generateAI(
-      studyPrompt,
-      "You are a helpful study planner for college students. Create realistic, organized daily plans."
+      prompt,
+      "You are a helpful study planner for college students. Create clear, realistic plans."
     );
-
-    console.log("Study plan generated successfully.");
 
     return res.json({
       success: true,
+      subject: selectedSubject,
+      days: selectedDays,
       plan,
     });
   } catch (error) {
@@ -391,7 +354,25 @@ Return plain text only.
 });
 
 // =====================================================
-// PDF UPLOAD AND TEXT EXTRACTION
+// PDF UPLOAD CONFIGURATION
+// =====================================================
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype !== "application/pdf") {
+      return cb(new Error("Only PDF files are supported."));
+    }
+
+    cb(null, true);
+  },
+});
+
+// =====================================================
+// PDF TEXT EXTRACTION
 // POST /api/upload-material
 // Form field: material
 // =====================================================
@@ -400,7 +381,7 @@ app.post(
   "/api/upload-material",
   upload.single("material"),
   async (req, res) => {
-    let parser = null;
+    let parser;
 
     try {
       if (!req.file) {
@@ -410,32 +391,36 @@ app.post(
         });
       }
 
-      console.log("PDF upload:", req.file.originalname);
-      console.log("PDF size:", req.file.size, "bytes");
+      console.log(
+        "PDF UPLOAD:",
+        req.file.originalname,
+        req.file.size,
+        "bytes"
+      );
 
       parser = new PDFParse({
         data: req.file.buffer,
       });
 
-      const pdfData = await parser.getText();
-      const extractedText = pdfData.text || "";
+      const result = await parser.getText();
+      const extractedText = result.text || "";
 
       if (!extractedText.trim()) {
         return res.status(400).json({
           success: false,
-          error: "The PDF does not contain readable text.",
+          error: "No readable text was found in this PDF.",
         });
       }
 
       return res.json({
         success: true,
         filename: req.file.originalname,
-        pages: pdfData.total || 1,
+        pages: result.total || 1,
         text: extractedText,
-        message: "PDF uploaded and read successfully! ✅",
+        message: "PDF uploaded and read successfully.",
       });
     } catch (error) {
-      console.error("PDF Upload Error:", error.message);
+      console.error("PDF Processing Error:", error.message);
 
       return res.status(500).json({
         success: false,
@@ -443,14 +428,11 @@ app.post(
         message: error.message,
       });
     } finally {
-      if (parser) {
+      if (parser && typeof parser.destroy === "function") {
         try {
           await parser.destroy();
-        } catch (destroyError) {
-          console.error(
-            "PDF parser cleanup error:",
-            destroyError.message
-          );
+        } catch (error) {
+          console.error("PDF cleanup error:", error.message);
         }
       }
     }
@@ -458,28 +440,26 @@ app.post(
 );
 
 // =====================================================
-// MULTER AND UPLOAD ERROR HANDLER
+// UPLOAD AND MULTER ERROR HANDLER
 // =====================================================
 
 app.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {
-    if (error.code === "LIMIT_FILE_SIZE") {
-      return res.status(400).json({
-        success: false,
-        error: "PDF size must be less than 10 MB.",
-      });
-    }
+    const message =
+      error.code === "LIMIT_FILE_SIZE"
+        ? "PDF size must be 10 MB or less."
+        : error.message;
 
     return res.status(400).json({
       success: false,
-      error: error.message,
+      error: message,
     });
   }
 
-  if (error && error.message === "Only PDF files are supported.") {
+  if (error.message === "Only PDF files are supported.") {
     return res.status(400).json({
       success: false,
-      error: "Only PDF files are supported.",
+      error: error.message,
     });
   }
 
@@ -504,20 +484,13 @@ app.use((error, req, res, next) => {
 });
 
 // =====================================================
-// START SERVER — RENDER
+// START SERVER
 // =====================================================
 
-const PORT = process.env.PORT || 5000;
-
 app.listen(PORT, "0.0.0.0", () => {
-  console.log("=================================");
+  console.log("==================================");
   console.log("🤖 PADDIPS BOT BACKEND");
-  console.log("=================================");
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log("GET  /");
-  console.log("POST /api/chat");
-  console.log("POST /api/quiz");
-  console.log("POST /api/study-plan");
-  console.log("POST /api/upload-material");
-  console.log("=================================");
+  console.log(`🧠 Gemini model: ${GEMINI_MODEL}`);
+  console.log("==================================");
 });
