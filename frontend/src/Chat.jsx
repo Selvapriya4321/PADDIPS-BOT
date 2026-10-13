@@ -2,20 +2,18 @@
 import { useState, useRef, useEffect } from "react";
 import "./Chat.css";
 
-// =====================================================
+// ============================================
 // API CONFIGURATION
-// =====================================================
+// ============================================
 
-// Use your actual Render backend URL.
-// You can override this using VITE_API_URL in .env.
 const API_URL = (
   import.meta.env.VITE_API_URL ||
   "https://paddips-bot.onrender.com"
 ).replace(/\/+$/, "");
 
-// =====================================================
+// ============================================
 // CHAT COMPONENT
-// =====================================================
+// ============================================
 
 function Chat() {
   const [message, setMessage] = useState("");
@@ -26,16 +24,16 @@ function Chat() {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
-  // Scroll to the latest message automatically.
+  // Automatically scroll to the latest message.
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
       behavior: "smooth",
     });
   }, [messages, loading]);
 
-  // ===================================================
-  // SEND MESSAGE TO BACKEND
-  // ===================================================
+  // ==========================================
+  // SEND MESSAGE
+  // ==========================================
 
   const sendMessage = async (event) => {
     event?.preventDefault();
@@ -58,33 +56,24 @@ function Chat() {
 
     setLoading(true);
 
+    const controller = new AbortController();
+
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 90000);
+
     try {
-      const controller = new AbortController();
+      const response = await fetch(`${API_URL}/api/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: userMessage,
+        }),
+        signal: controller.signal,
+      });
 
-      // Avoid waiting forever if the server does not respond.
-      const timeoutId = setTimeout(
-        () => controller.abort(),
-        90000
-      );
-
-      let response;
-
-      try {
-        response = await fetch(`${API_URL}/api/chat`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            message: userMessage,
-          }),
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timeoutId);
-      }
-
-      // Read the response safely.
       const rawResponse = await response.text();
 
       let data = {};
@@ -93,20 +82,20 @@ function Chat() {
         data = rawResponse ? JSON.parse(rawResponse) : {};
       } catch {
         throw new Error(
-          `Backend returned an invalid response (HTTP ${response.status}). Check your backend URL and server logs.`
+          `Invalid server response (HTTP ${response.status}). Check the Render backend URL.`
         );
       }
 
-      // Handle HTTP errors.
+      // Display useful backend errors, including API-key errors.
       if (!response.ok) {
         throw new Error(
           data.error ||
             data.message ||
+            data.reply ||
             `Request failed with HTTP ${response.status}`
         );
       }
 
-      // Support common response field names.
       const aiReply =
         typeof data.reply === "string"
           ? data.reply
@@ -120,7 +109,7 @@ function Chat() {
 
       if (!aiReply.trim()) {
         throw new Error(
-          "The backend responded, but no AI reply was found. Check the response format in server.js."
+          "The server responded, but no AI reply was received."
         );
       }
 
@@ -133,18 +122,16 @@ function Chat() {
         },
       ]);
     } catch (err) {
-      console.error("PADDIPS BOT chat error:", err);
+      console.error("PADDIPS BOT error:", err);
 
       let errorMessage;
 
       if (err.name === "AbortError") {
         errorMessage =
           "The server took too long to respond. Please try again.";
-      } else if (
-        err instanceof TypeError
-      ) {
+      } else if (err instanceof TypeError) {
         errorMessage =
-          "Cannot connect to the backend. Check the Render URL, CORS settings, and whether the service is running.";
+          "Cannot connect to the backend. Check the Render URL, CORS settings, and network connection.";
       } else {
         errorMessage =
           err.message || "Something went wrong. Please try again.";
@@ -161,29 +148,33 @@ function Chat() {
         },
       ]);
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
       inputRef.current?.focus();
     }
   };
 
-  // ===================================================
+  // ==========================================
   // CLEAR CHAT
-  // ===================================================
+  // ==========================================
 
   const clearChat = () => {
+    if (loading) return;
+
     setMessages([]);
     setError("");
     setMessage("");
     inputRef.current?.focus();
   };
 
-  // ===================================================
+  // ==========================================
   // CHAT UI
-  // ===================================================
+  // ==========================================
 
   return (
     <main className="paddips-chat-page">
       <section className="paddips-chat-container">
+
         {/* HEADER */}
         <header className="paddips-chat-header">
           <div className="paddips-brand">
@@ -224,6 +215,7 @@ function Chat() {
           className="paddips-chat-panel"
           aria-label="AI chat"
         >
+          {/* TOOLBAR */}
           <div className="paddips-chat-toolbar">
             <div>
               <strong>Study Chat</strong>
@@ -248,13 +240,15 @@ function Chat() {
           >
             {messages.length === 0 && (
               <div className="paddips-empty-state">
-                <div className="paddips-empty-icon">💡</div>
+                <div className="paddips-empty-icon">
+                  💡
+                </div>
 
                 <h3>What would you like to learn?</h3>
 
                 <p>
-                  Ask me anything about programming,
-                  databases, computer science, or your studies.
+                  Ask me about programming, databases,
+                  computer science, or your studies.
                 </p>
 
                 <div className="paddips-suggestions">
@@ -307,6 +301,7 @@ function Chat() {
               </div>
             ))}
 
+            {/* THINKING INDICATOR */}
             {loading && (
               <div className="paddips-message-row ai">
                 <div className="paddips-message-avatar">
@@ -338,7 +333,9 @@ function Chat() {
               ref={inputRef}
               type="text"
               value={message}
-              onChange={(event) => setMessage(event.target.value)}
+              onChange={(event) =>
+                setMessage(event.target.value)
+              }
               placeholder="Ask your study question..."
               aria-label="Your message"
               autoComplete="off"
@@ -359,11 +356,15 @@ function Chat() {
           </p>
         </section>
 
-        {/* ERROR DETAILS */}
+        {/* ERROR NOTICE */}
         {error && (
-          <div className="paddips-error-notice" role="alert">
+          <div
+            className="paddips-error-notice"
+            role="alert"
+          >
             <strong>Unable to get a response</strong>
             <p>{error}</p>
+
             <button
               type="button"
               onClick={() => {
@@ -381,6 +382,7 @@ function Chat() {
           <span>✦ PADDIPS BOT</span>
           <span>AI LEARNING ASSISTANT</span>
         </footer>
+
       </section>
     </main>
   );
