@@ -7,10 +7,7 @@ require("dotenv").config();
 
 const app = express();
 
-// ==================================================
 // 1. CONFIGURATION
-// ==================================================
-
 const PORT = process.env.PORT || 5000;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-6-luna";
 
@@ -23,10 +20,7 @@ const ALLOWED_ORIGINS = [
 const MAX_MESSAGE_LENGTH = 10000;
 const MAX_PDF_SIZE = 10 * 1024 * 1024;
 
-// ==================================================
 // 2. CORS AND JSON
-// ==================================================
-
 app.use(
   cors({
     origin(origin, callback) {
@@ -43,10 +37,7 @@ app.use(
 
 app.use(express.json({ limit: "2mb" }));
 
-// ==================================================
 // 3. OPENAI API HELPER
-// ==================================================
-
 async function generateAI(prompt, systemInstruction = "") {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
 
@@ -80,7 +71,7 @@ async function generateAI(prompt, systemInstruction = "") {
       data?.error?.message ||
       `OpenAI API request failed with HTTP ${response.status}`;
 
-    // Do not log the API key.
+    // Never log or return the API key.
     console.error("OpenAI API error:", {
       status: response.status,
       message,
@@ -106,11 +97,7 @@ async function generateAI(prompt, systemInstruction = "") {
   return answer;
 }
 
-// ==================================================
 // 4. HEALTH CHECK
-// GET /
-// ==================================================
-
 app.get("/", (req, res) => {
   res.json({
     success: true,
@@ -126,12 +113,7 @@ app.get("/", (req, res) => {
   });
 });
 
-// ==================================================
 // 5. AI CHAT
-// POST /api/chat
-// Body: { "message": "Explain HTML" }
-// ==================================================
-
 app.post("/api/chat", async (req, res) => {
   try {
     const { message } = req.body || {};
@@ -164,10 +146,7 @@ app.post("/api/chat", async (req, res) => {
       ].join(" ")
     );
 
-    return res.json({
-      success: true,
-      reply,
-    });
+    return res.json({ success: true, reply });
   } catch (error) {
     console.error("AI Chat Error:", error.message);
 
@@ -179,12 +158,7 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-// ==================================================
 // 6. AI QUIZ
-// POST /api/quiz
-// Body: { "topic": "HTML", "count": 5 }
-// ==================================================
-
 app.post("/api/quiz", async (req, res) => {
   try {
     const { topic, count } = req.body || {};
@@ -293,12 +267,7 @@ Required JSON format:
   }
 });
 
-// ==================================================
 // 7. AI STUDY PLAN
-// POST /api/study-plan
-// Body: { "subject": "JavaScript", "days": 7 }
-// ==================================================
-
 app.post("/api/study-plan", async (req, res) => {
   try {
     const { subject, days } = req.body || {};
@@ -369,12 +338,7 @@ Return plain text, not JSON.
   }
 });
 
-// ==================================================
 // 8. PDF UPLOAD CONFIGURATION
-// Maximum size: 10 MB
-// Form field name: material
-// ==================================================
-
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -389,11 +353,7 @@ const upload = multer({
   },
 });
 
-// ==================================================
 // 9. PDF TEXT EXTRACTION
-// POST /api/upload-material
-// ==================================================
-
 app.post(
   "/api/upload-material",
   upload.single("material"),
@@ -415,9 +375,7 @@ app.post(
         "bytes"
       );
 
-      parser = new PDFParse({
-        data: req.file.buffer,
-      });
+      parser = new PDFParse({ data: req.file.buffer });
 
       const result = await parser.getText();
       const extractedText = result.text || "";
@@ -456,10 +414,7 @@ app.post(
   }
 );
 
-// ==================================================
 // 10. ERROR HANDLER
-// ==================================================
-
 app.use((error, req, res, next) => {
   if (res.headersSent) {
     return next(error);
@@ -491,6 +446,13 @@ app.use((error, req, res, next) => {
     });
   }
 
+  if (error.type === "entity.too.large") {
+    return res.status(413).json({
+      success: false,
+      error: "Request body is too large.",
+    });
+  }
+
   console.error("Unhandled Server Error:", error.message);
 
   return res.status(500).json({
@@ -499,10 +461,7 @@ app.use((error, req, res, next) => {
   });
 });
 
-// ==================================================
 // 11. START SERVER
-// ==================================================
-
 app.listen(PORT, "0.0.0.0", () => {
   console.log("==================================");
   console.log("PADDIPS BOT BACKEND STARTED");
@@ -510,4 +469,4 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`OpenAI model: ${OPENAI_MODEL}`);
   console.log("==================================");
 });
-  
+        
