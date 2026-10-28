@@ -1,5 +1,5 @@
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
 
 const API_URL = (
@@ -14,245 +14,82 @@ async function apiRequest(path, options = {}) {
     response = await fetch(`${API_URL}${path}`, options);
   } catch {
     throw new Error(
-      "Unable to connect. Check your internet connection and try again."
+      "Cannot connect to the backend. Check your internet connection and Render URL."
     );
   }
 
-  const contentType = response.headers.get("content-type") || "";
   let data;
 
-  if (contentType.includes("application/json")) {
+  try {
     data = await response.json();
-  } else {
-    data = await response.text();
+  } catch {
+    throw new Error("The backend returned an invalid response.");
   }
 
-  if (!response.ok) {
-    const message =
-      typeof data === "object" && data
-        ? data.detail || data.error || data.message
-        : data;
-
+  if (!response.ok || data.success === false) {
     throw new Error(
-      message || `Request failed (${response.status}). Please try again.`
+      data.error ||
+      data.message ||
+      `Request failed with status ${response.status}.`
     );
-  }
-
-  if (typeof data === "string") {
-    try {
-      return JSON.parse(data);
-    } catch {
-      return { response: data };
-    }
   }
 
   return data;
 }
 
-function getText(data) {
-  if (typeof data === "string") return data;
-
-  if (!data || typeof data !== "object") {
-    return "Your request was completed.";
-  }
-
-  return (
-    data.answer ??
-    data.response ??
-    data.reply ??
-    data.message ??
-    data.result ??
-    data.text ??
-    data.content ??
-    ""
-  );
-}
-
-function getQuizQuestions(data) {
-  if (Array.isArray(data)) return data;
-
-  return (
-    data?.questions ??
-    data?.quiz?.questions ??
-    data?.data?.questions ??
-    []
-  );
-}
-
-function getQuestionText(question) {
-  return (
-    question?.question ??
-    question?.text ??
-    question?.prompt ??
-    "Question"
-  );
-}
-
-function getOptions(question) {
-  const options =
-    question?.options ??
-    question?.choices ??
-    question?.answers ??
-    [];
-
-  if (Array.isArray(options)) {
-    return options.map((option, index) => ({
-      label: String.fromCharCode(65 + index),
-
-      text:
-        typeof option === "object"
-          ? option.text ??
-            option.label ??
-            option.option ??
-            JSON.stringify(option)
-          : String(option),
-
-      value:
-        typeof option === "object"
-          ? option.value ??
-            option.text ??
-            option.label ??
-            option.option
-          : option,
-    }));
-  }
-
-  if (options && typeof options === "object") {
-    return Object.entries(options).map(([key, value]) => ({
-      label: key,
-      text: String(value),
-      value: key,
-    }));
-  }
-
-  return [];
+function getOptionText(option) {
+  if (typeof option === "string") return option;
+  return String(option?.text ?? option?.label ?? option?.value ?? "");
 }
 
 function getCorrectAnswer(question) {
-  return (
-    question?.correct_answer ??
-    question?.correctAnswer ??
-    question?.answer ??
-    question?.correct_option ??
-    question?.correctOption ??
-    null
-  );
-}
+  const answer = question.answer ?? question.correctAnswer;
+  const options = question.options || [];
 
-function answerMatches(selected, correct, options) {
-  if (correct === null || correct === undefined) {
-    return false;
+  if (typeof answer === "number") {
+    return getOptionText(options[answer] ?? "");
   }
 
-  const selectedOption = options.find(
-    (option) => String(option.value) === String(selected)
-  );
+  if (typeof answer !== "string") return "";
 
-  return [
-    selected,
-    selectedOption?.text,
-    selectedOption?.label,
-  ].some(
-    (value) =>
-      value !== undefined &&
-      String(value).toLowerCase() === String(correct).toLowerCase()
-  );
+  const match = answer.match(/^([A-D])(?:[\s).:-]|$)/i);
+
+  if (match && options.length) {
+    const index = match[1].toUpperCase().charCodeAt(0) - 65;
+    if (options[index] !== undefined) {
+      return getOptionText(options[index]);
+    }
+  }
+
+  return answer;
 }
 
-const FEATURES = [
-  {
-    id: "chat",
-    icon: "🤖",
-    title: "AI Study Chat",
-    text: "Ask questions and understand concepts.",
-    color: "violet",
-  },
-  {
-    id: "quiz",
-    icon: "📝",
-    title: "Practice Quiz",
-    text: "Test your knowledge with questions.",
-    color: "blue",
-  },
-  {
-    id: "planner",
-    icon: "📅",
-    title: "Study Planner",
-    text: "Build a plan for your learning goals.",
-    color: "cyan",
-  },
-  {
-    id: "pdf",
-    icon: "📚",
-    title: "PDF Assistant",
-    text: "Upload study material and ask questions.",
-    color: "pink",
-  },
-];
-
-function PageShell({ title, subtitle, icon, onBack, children }) {
+/*
+ IMPORTANT:
+ Keep PageShell OUTSIDE App().
+ This prevents the chat input from losing focus
+ whenever you type a character.
+*/
+function PageShell({ icon, title, description, children, onHome }) {
   return (
-    <main className="page-shell">
+    <div className="page-shell">
       <div className="page-inner">
         <button
-          className="back-button"
           type="button"
-          onClick={onBack}
+          className="back-button"
+          onClick={onHome}
         >
-          <span aria-hidden="true">←</span> Home
+          ← Back to Home
         </button>
 
         <header className="page-hero">
-          <div className="hero-icon" aria-hidden="true">
-            {icon}
-          </div>
-
-          <div>
-            <p className="eyebrow">PADDIPS LEARNING SPACE</p>
-            <h1>{title}</h1>
-            <p className="page-subtitle">{subtitle}</p>
-          </div>
+          <div className="hero-icon">{icon}</div>
+          <h1>{title}</h1>
+          <p>{description}</p>
         </header>
 
         {children}
       </div>
-    </main>
-  );
-}
-
-function Loading({ text = "Working on it..." }) {
-  return (
-    <div
-      className="loading-state"
-      role="status"
-      aria-live="polite"
-    >
-      <span className="spinner" aria-hidden="true" />
-      <span>{text}</span>
-    </div>
-  );
-}
-
-function Notice({ type = "info", children, onClose }) {
-  if (!children) return null;
-
-  return (
-    <div
-      className={`notice notice-${type}`}
-      role={type === "error" ? "alert" : "status"}
-    >
-      <span>{children}</span>
-
-      {onClose && (
-        <button
-          type="button"
-          className="notice-close"
-          onClick={onClose}
-          aria-label="Dismiss message"
-        >
-          ×
-        </button>
-      )}
     </div>
   );
 }
@@ -260,882 +97,844 @@ function Notice({ type = "info", children, onClose }) {
 export default function App() {
   const [stage, setStage] = useState(1);
   const [page, setPage] = useState("home");
-  const [menuOpen, setMenuOpen] = useState(false);
 
   // Chat state
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      content:
-        "Hi! I'm PADDIPS BOT. Ask me a question and let's learn together. ✨",
+      text: "Hi! 👋 Welcome to PADDIPS BOT. Ask me anything you want to learn!",
     },
   ]);
-
-  const [chatInput, setChatInput] = useState("");
+  const [message, setMessage] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState("");
-  const chatEndRef = useRef(null);
 
   // Quiz state
-  const [quizTopic, setQuizTopic] = useState("");
+  const [topic, setTopic] = useState("");
   const [quizCount, setQuizCount] = useState("5");
-  const [quizQuestions, setQuizQuestions] = useState([]);
-  const [quizAnswers, setQuizAnswers] = useState({});
+  const [quiz, setQuiz] = useState([]);
+  const [selectedAnswers, setSelectedAnswers] = useState({});
+  const [score, setScore] = useState(null);
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [quizLoading, setQuizLoading] = useState(false);
   const [quizError, setQuizError] = useState("");
-  const [quizNotice, setQuizNotice] = useState("");
 
   // Study planner state
-  const [planTopic, setPlanTopic] = useState("");
-  const [planDays, setPlanDays] = useState("7");
-  const [studyPlan, setStudyPlan] = useState(null);
+  const [subject, setSubject] = useState("");
+  const [days, setDays] = useState("7");
+  const [studyPlan, setStudyPlan] = useState("");
   const [planLoading, setPlanLoading] = useState(false);
   const [planError, setPlanError] = useState("");
 
   // PDF state
-  const [pdfFile, setPdfFile] = useState(null);
-  const [pdfUploaded, setPdfUploaded] = useState(false);
-  const [pdfQuestion, setPdfQuestion] = useState("");
-  const [pdfAnswer, setPdfAnswer] = useState("");
-  const [pdfLoading, setPdfLoading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [pdfData, setPdfData] = useState(null);
   const [pdfError, setPdfError] = useState("");
-  const [pdfNotice, setPdfNotice] = useState("");
-  const fileInputRef = useRef(null);
-    // Splash screen timing
+
+  // Splash screen animation
   useEffect(() => {
     const timers = [
-      setTimeout(() => setStage(2), 450),
-      setTimeout(() => setStage(3), 950),
-      setTimeout(() => setStage(4), 1450),
-      setTimeout(() => setStage(5), 1950),
-      setTimeout(() => setStage(6), 2600),
+      window.setTimeout(() => setStage(2), 900),
+      window.setTimeout(() => setStage(3), 1800),
+      window.setTimeout(() => setStage(4), 2700),
+      window.setTimeout(() => setStage(5), 3600),
+      window.setTimeout(() => setStage(6), 4500),
     ];
 
-    return () => timers.forEach(clearTimeout);
+    return () => timers.forEach(window.clearTimeout);
   }, []);
 
-  // Automatically scroll to the latest chat message
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "end",
-    });
-  }, [messages, chatLoading]);
-
-  // Close mobile navigation with the Escape key
-  useEffect(() => {
-    function handleEscape(event) {
-      if (event.key === "Escape") {
-        setMenuOpen(false);
-      }
-    }
-
-    window.addEventListener("keydown", handleEscape);
-
-    return () => {
-      window.removeEventListener("keydown", handleEscape);
-    };
-  }, []);
-
-  function navigate(nextPage) {
+  function goTo(nextPage) {
     setPage(nextPage);
-    setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  // Splash screen
-  const splashStages = [
-    "PADDIPS",
-    "PADDIPS BOT",
-    "Your learning companion",
-    "Chat • Quiz • Plan",
-    "Preparing your workspace",
-  ];
+  // Send a chat message
+  async function sendMessage(event, suppliedMessage) {
+    event?.preventDefault();
 
+    const question = (suppliedMessage ?? message).trim();
+
+    if (!question || chatLoading) return;
+
+    setMessages((previous) => [
+      ...previous,
+      { role: "user", text: question },
+    ]);
+
+    setMessage("");
+    setChatLoading(true);
+    setChatError("");
+
+    try {
+      const data = await apiRequest("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ message: question }),
+      });
+
+      const reply = data.reply || data.answer;
+
+      if (!reply) {
+        throw new Error("The backend returned an empty answer.");
+      }
+
+      setMessages((previous) => [
+        ...previous,
+        { role: "assistant", text: reply },
+      ]);
+    } catch (error) {
+      setChatError(error.message || "Chat request failed.");
+    } finally {
+      setChatLoading(false);
+    }
+  }
+
+  function clearChat() {
+    setMessages([
+      {
+        role: "assistant",
+        text: "Hello again! 👋 What would you like to learn?",
+      },
+    ]);
+    setChatError("");
+  }
+  
+  async function generateQuiz(event) {
+    event?.preventDefault();
+
+    const cleanTopic = topic.trim();
+    const count = Number(quizCount);
+
+    if (!cleanTopic) {
+      setQuizError("Please enter a topic for your quiz.");
+      return;
+    }
+
+    if (!Number.isInteger(count) || count < 1 || count > 20) {
+      setQuizError("Choose between 1 and 20 questions.");
+      return;
+    }
+
+    setQuizLoading(true);
+    setQuizError("");
+    setQuiz([]);
+    setSelectedAnswers({});
+    setScore(null);
+    setQuizSubmitted(false);
+
+    try {
+      const data = await apiRequest("/api/quiz", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: cleanTopic,
+          count,
+          numberOfQuestions: count,
+        }),
+      });
+
+      const questions =
+        data.questions ||
+        data.quiz ||
+        data.data?.questions ||
+        [];
+
+      if (!Array.isArray(questions) || questions.length === 0) {
+        throw new Error(
+          "No questions were returned. Please try another topic."
+        );
+      }
+
+      setQuiz(questions);
+    } catch (error) {
+      setQuizError(error.message || "Unable to generate the quiz.");
+    } finally {
+      setQuizLoading(false);
+    }
+  }
+
+  function selectAnswer(questionIndex, answer) {
+    if (quizSubmitted) return;
+
+    setSelectedAnswers((previous) => ({
+      ...previous,
+      [questionIndex]: answer,
+    }));
+  }
+
+  function submitQuiz() {
+    if (!quiz.length) return;
+
+    let correct = 0;
+
+    quiz.forEach((question, index) => {
+      const correctAnswer = getCorrectAnswer(question);
+      const selectedAnswer = selectedAnswers[index];
+
+      if (
+        correctAnswer &&
+        selectedAnswer !== undefined &&
+        String(selectedAnswer).trim().toLowerCase() ===
+          String(correctAnswer).trim().toLowerCase()
+      ) {
+        correct += 1;
+      }
+    });
+
+    setScore(correct);
+    setQuizSubmitted(true);
+  }
+
+  function resetQuiz() {
+    setQuiz([]);
+    setSelectedAnswers({});
+    setScore(null);
+    setQuizSubmitted(false);
+    setQuizError("");
+  }
+
+  async function generateStudyPlan(event) {
+    event?.preventDefault();
+
+    const cleanSubject = subject.trim();
+    const numberOfDays = Number(days);
+
+    if (!cleanSubject) {
+      setPlanError("Please enter a subject or topic.");
+      return;
+    }
+
+    if (
+      !Number.isInteger(numberOfDays) ||
+      numberOfDays < 1 ||
+      numberOfDays > 365
+    ) {
+      setPlanError("Choose a duration between 1 and 365 days.");
+      return;
+    }
+
+    setPlanLoading(true);
+    setPlanError("");
+    setStudyPlan("");
+
+    try {
+      const data = await apiRequest("/api/study-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: cleanSubject,
+          topic: cleanSubject,
+          days: numberOfDays,
+          duration: numberOfDays,
+        }),
+      });
+
+      const plan =
+        data.studyPlan ||
+        data.study_plan ||
+        data.plan ||
+        data.result ||
+        data.message;
+
+      if (!plan) {
+        throw new Error("The backend did not return a study plan.");
+      }
+
+      setStudyPlan(
+        typeof plan === "string" ? plan : JSON.stringify(plan, null, 2)
+      );
+    } catch (error) {
+      setPlanError(error.message || "Unable to create the study plan.");
+    } finally {
+      setPlanLoading(false);
+    }
+  }
+
+  async function uploadMaterial(event) {
+    event?.preventDefault();
+
+    if (!selectedFile) {
+      setPdfError("Please select a PDF file first.");
+      return;
+    }
+
+    if (selectedFile.type !== "application/pdf") {
+      setPdfError("Only PDF files are supported.");
+      return;
+    }
+
+    if (selectedFile.size > 10 * 1024 * 1024) {
+      setPdfError("The PDF must be 10 MB or smaller.");
+      return;
+    }
+
+    setUploadLoading(true);
+    setPdfError("");
+    setPdfData(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      const data = await apiRequest("/api/upload-material", {
+        method: "POST",
+        body: formData,
+      });
+
+      setPdfData(data);
+    } catch (error) {
+      setPdfError(error.message || "Unable to upload the PDF.");
+    } finally {
+      setUploadLoading(false);
+    }
+  }
+
+  function formatContent(content) {
+    if (typeof content === "string") return content;
+    if (content == null) return "";
+    return JSON.stringify(content, null, 2);
+                }
+    
   if (stage < 6) {
+    const splashMessages = [
+      "Initializing PADDIPS BOT...",
+      "Preparing your learning space...",
+      "Connecting learning tools...",
+      "Getting things ready...",
+      "Almost there...",
+    ];
+
     return (
       <div className="splash-screen">
-        <div className="splash-orb splash-orb-one" />
-        <div className="splash-orb splash-orb-two" />
-
-        <div className="splash-content" aria-live="polite">
-          <div className="splash-logo" aria-hidden="true">
-            ✦
+        <div className="splash-content">
+          <div className="splash-logo">🤖</div>
+          <h1>PADDIPS BOT</h1>
+          <p>AI LEARNING ASSISTANT</p>
+          <div className="splash-progress">
+            <div className="splash-progress-fill" />
           </div>
-
-          <p className="splash-kicker">
-            AI LEARNING ASSISTANT
-          </p>
-
-          <h1 className="splash-title">
-            PADDIPS BOT
-          </h1>
-
-          <p className="splash-message">
-            {splashStages[Math.min(stage - 1, splashStages.length - 1)]}
-          </p>
-
-          <div className="splash-progress" aria-label="Loading">
-            <span />
-          </div>
+          <span>
+            {splashMessages[Math.min(stage - 1, splashMessages.length - 1)]}
+          </span>
         </div>
       </div>
     );
   }
 
-  const activeFeature = FEATURES.find(
-    (feature) => feature.id === page
-  );
+  if (page === "chat") {
+    return (
+      <PageShell
+        icon="💬"
+        title="AI Chat Assistant"
+        description="Ask questions and learn something new."
+        onHome={() => goTo("home")}
+      >
+        <section className="content-card chat-card">
+          <div className="chat-toolbar">
+            <span className="status-indicator">● Ready to chat</span>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={clearChat}
+            >
+              Clear Chat
+            </button>
+          </div>
 
+          <div className="chat-messages" aria-live="polite">
+            {messages.map((item, index) => (
+              <div
+                key={`${index}-${item.role}`}
+                className={`chat-message ${
+                  item.role === "user" ? "user-message" : "bot-message"
+                }`}
+              >
+                <div className="message-avatar">
+                  {item.role === "user" ? "👤" : "🤖"}
+                </div>
+                <div className="message-bubble">
+                  <strong>
+                    {item.role === "user" ? "You" : "PADDIPS BOT"}
+                  </strong>
+                  <p>{item.text}</p>
+                </div>
+              </div>
+            ))}
+
+            {chatLoading && (
+              <div className="loading-message" role="status">
+                🤖 PADDIPS BOT is thinking...
+              </div>
+            )}
+          </div>
+
+          {chatError && (
+            <p className="error-message" role="alert">
+              {chatError}
+            </p>
+          )}
+
+          <form className="chat-form" onSubmit={sendMessage}>
+            <input
+              type="text"
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder="Type your question here..."
+              aria-label="Your message"
+              disabled={chatLoading}
+            />
+            <button
+              type="submit"
+              className="primary-button"
+              disabled={chatLoading || !message.trim()}
+            >
+              {chatLoading ? "Sending..." : "Send ➤"}
+            </button>
+          </form>
+
+          <div className="suggestion-list">
+            <span>Try asking:</span>
+            {[
+              "Explain cloud computing",
+              "Teach me Python basics",
+              "What is a database?",
+            ].map((suggestion) => (
+              <button
+                type="button"
+                className="suggestion-button"
+                key={suggestion}
+                disabled={chatLoading}
+                onClick={() => sendMessage(undefined, suggestion)}
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        </section>
+      </PageShell>
+    );
+  }
+
+  if (page === "quiz") {
+    return (
+      <PageShell
+        icon="📝"
+        title="Quiz Generator"
+        description="Practice what you learn with a custom quiz."
+        onHome={() => goTo("home")}
+      >
+        <section className="content-card">
+          <form className="tool-form" onSubmit={generateQuiz}>
+            <label htmlFor="quiz-topic">Enter your topic</label>
+            <input
+              id="quiz-topic"
+              type="text"
+              value={topic}
+              onChange={(event) => setTopic(event.target.value)}
+              placeholder="Example: Java, Cloud Computing, GIS"
+              required
+            />
+
+            <label htmlFor="quiz-count">Number of questions</label>
+            <select
+              id="quiz-count"
+              value={quizCount}
+              onChange={(event) => setQuizCount(event.target.value)}
+            >
+              <option value="5">5 questions</option>
+              <option value="10">10 questions</option>
+              <option value="15">15 questions</option>
+              <option value="20">20 questions</option>
+            </select>
+
+            <button
+              type="submit"
+              className="primary-button full-button"
+              disabled={quizLoading}
+            >
+              {quizLoading ? "Generating quiz..." : "Generate Quiz ✨"}
+            </button>
+          </form>
+
+          {quizError && (
+            <p className="error-message" role="alert">
+              {quizError}
+            </p>
+          )}
+
+          {quiz.length > 0 && (
+            <div className="quiz-results">
+              {quizSubmitted && (
+                <div className="score-card" aria-live="polite">
+                  <h2>Your Result</h2>
+                  <p>
+                    You scored <strong>{score}</strong> out of{" "}
+                    <strong>{quiz.length}</strong>.
+                  </p>
+                  <p>
+                    Percentage:{" "}
+                    <strong>
+                      {Math.round((score / quiz.length) * 100)}%
+                    </strong>
+                  </p>
+                </div>
+              )}
+
+              {quiz.map((question, index) => {
+                const options = question.options || [];
+                const correctAnswer = getCorrectAnswer(question);
+
+                return (
+                  <article className="question-card" key={index}>
+                    <h3>
+                      {index + 1}.{" "}
+                      {question.question || question.text || "Question"}
+                    </h3>
+
+                    <div className="answer-options">
+                      {options.map((option, optionIndex) => {
+                        const optionText = getOptionText(option);
+                        const isSelected =
+                          selectedAnswers[index] === optionText;
+                        const isCorrect =
+                          quizSubmitted &&
+                          optionText.toLowerCase() ===
+                            correctAnswer.trim().toLowerCase();
+
+                        return (
+                          <button
+                            type="button"
+                            key={optionIndex}
+                            className={[
+                              "answer-option",
+                              isSelected ? "selected" : "",
+                              isCorrect ? "correct-answer" : "",
+                              quizSubmitted &&
+                              isSelected &&
+                              !isCorrect
+                                ? "wrong-answer"
+                                : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
+                            onClick={() =>
+                              selectAnswer(index, optionText)
+                            }
+                            disabled={quizSubmitted}
+                          >
+                            <span className="option-letter">
+                              {String.fromCharCode(65 + optionIndex)}
+                            </span>
+                            {optionText}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {quizSubmitted && question.explanation && (
+                      <p className="explanation">
+                        <strong>Explanation:</strong>{" "}
+                        {question.explanation}
+                      </p>
+                    )}
+                  </article>
+                );
+              })}
+
+              {!quizSubmitted ? (
+                <button
+                  type="button"
+                  className="primary-button full-button"
+                  onClick={submitQuiz}
+                >
+                  Submit Answers
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="primary-button full-button"
+                  onClick={resetQuiz}
+                >
+                  Create Another Quiz
+                </button>
+              )}
+            </div>
+          )}
+        </section>
+      </PageShell>
+    );
+  }
+
+  if (page === "study-plan") {
+    return (
+      <PageShell
+        icon="📅"
+        title="Study Planner"
+        description="Create a study plan based on your subject and available time."
+        onHome={() => goTo("home")}
+      >
+        <section className="content-card">
+          <form className="tool-form" onSubmit={generateStudyPlan}>
+            <label htmlFor="study-subject">Subject or topic</label>
+            <input
+              id="study-subject"
+              type="text"
+              value={subject}
+              onChange={(event) => setSubject(event.target.value)}
+              placeholder="Example: Python Programming"
+              required
+            />
+
+            <label htmlFor="study-days">Study duration</label>
+            <select
+              id="study-days"
+              value={days}
+              onChange={(event) => setDays(event.target.value)}
+            >
+              <option value="7">7 days</option>
+              <option value="14">14 days</option>
+              <option value="30">30 days</option>
+              <option value="60">60 days</option>
+              <option value="90">90 days</option>
+            </select>
+
+            <button
+              type="submit"
+              className="primary-button full-button"
+              disabled={planLoading}
+            >
+              {planLoading ? "Creating your plan..." : "Create Study Plan"}
+            </button>
+          </form>
+
+          {planError && (
+            <p className="error-message" role="alert">
+              {planError}
+            </p>
+          )}
+
+          {studyPlan && (
+            <div className="generated-content">
+              <h2>Your Study Plan</h2>
+              <pre>{formatContent(studyPlan)}</pre>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() =>
+                  navigator.clipboard?.writeText(studyPlan)
+                }
+              >
+                Copy Study Plan
+              </button>
+            </div>
+          )}
+        </section>
+      </PageShell>
+    );
+  }
+
+  if (page === "pdf") {
+    return (
+      <PageShell
+        icon="📚"
+        title="PDF Learning Assistant"
+        description="Upload a PDF learning material to process it with your backend."
+        onHome={() => goTo("home")}
+      >
+        <section className="content-card">
+          <form className="tool-form" onSubmit={uploadMaterial}>
+            <label htmlFor="pdf-file">Choose a PDF file (maximum 10 MB)</label>
+            <input
+              id="pdf-file"
+              type="file"
+              accept=".pdf,application/pdf"
+              onChange={(event) => {
+                setSelectedFile(event.target.files?.[0] || null);
+                setPdfError("");
+                setPdfData(null);
+              }}
+              required
+            />
+
+            {selectedFile && (
+              <p className="file-info">
+                Selected: {selectedFile.name} (
+                {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB)
+              </p>
+            )}
+
+            <button
+              type="submit"
+              className="primary-button full-button"
+              disabled={uploadLoading}
+            >
+              {uploadLoading ? "Uploading..." : "Upload PDF"}
+            </button>
+          </form>
+
+          {pdfError && (
+            <p className="error-message" role="alert">
+              {pdfError}
+            </p>
+          )}
+
+          {pdfData && (
+            <div className="generated-content">
+              <h2>PDF Processing Result</h2>
+              <pre>{formatContent(pdfData)}</pre>
+            </div>
+          )}
+        </section>
+      </PageShell>
+    );
+                     }
+                
   return (
-    <div className="app">
-      <a className="skip-link" href="#main-content">
-        Skip to main content
-      </a>
-
-      {/* Navigation bar */}
-      <header className="topbar">
+    <main className="app-home">
+      <nav className="navbar">
         <button
+          type="button"
           className="brand"
-          type="button"
-          onClick={() => navigate("home")}
-          aria-label="PADDIPS BOT home"
+          onClick={() => goTo("home")}
         >
-          <span className="brand-mark" aria-hidden="true">
-            ✦
-          </span>
-
-          <span>
-            PADDIPS <strong>BOT</strong>
-          </span>
+          <span className="brand-icon">🤖</span>
+          <span>PADDIPS BOT</span>
         </button>
+
+        <span className="navbar-tagline">AI Learning Assistant</span>
+      </nav>
+
+      <section className="home-hero">
+        <div className="hero-badge">✨ YOUR PERSONAL LEARNING COMPANION</div>
+
+        <h1>
+          Learn Smarter.
+          <br />
+          <span>Grow Faster.</span>
+        </h1>
+
+        <p>
+          Your learning journey starts here. Chat with your AI assistant,
+          practice quizzes, plan your studies, and explore your PDF materials
+          in one place.
+        </p>
 
         <button
-          className="menu-toggle"
           type="button"
-          aria-expanded={menuOpen}
-          aria-controls="main-navigation"
-          onClick={() => setMenuOpen((open) => !open)}
+          className="primary-button hero-button"
+          onClick={() => goTo("chat")}
         >
-          {menuOpen ? "Close ✕" : "Menu ☰"}
+          Start Learning →
         </button>
 
-        <nav
-          className={`navigation ${
-            menuOpen ? "navigation-open" : ""
-          }`}
-          id="main-navigation"
-          aria-label="Main navigation"
-        >
+        <div className="hero-robot" aria-hidden="true">
+          <div className="robot-glow" />
+          <div className="robot-face">
+            <div className="robot-antenna" />
+            <div className="robot-eyes">
+              <span />
+              <span />
+            </div>
+            <div className="robot-mouth" />
+            <div className="robot-cheek left-cheek" />
+            <div className="robot-cheek right-cheek" />
+          </div>
+          <div className="robot-shadow" />
+        </div>
+      </section>
+
+      <section className="features-section">
+        <div className="section-heading">
+          <span className="eyebrow">WHAT YOU CAN DO</span>
+          <h2>Your Learning Toolkit</h2>
+          <p>Everything you need to make learning easier.</p>
+        </div>
+
+        <div className="feature-grid">
           <button
-            className={
-              page === "home" ? "nav-link active" : "nav-link"
-            }
-            onClick={() => navigate("home")}
+            type="button"
+            className="feature-card feature-chat"
+            onClick={() => goTo("chat")}
           >
-            Home
+            <span className="feature-icon">💬</span>
+            <h3>AI Chat Assistant</h3>
+            <p>
+              Ask questions, understand difficult concepts, and get learning
+              support.
+            </p>
+            <span className="feature-link">Start chatting →</span>
           </button>
 
-          {FEATURES.map((feature) => (
-            <button
-              key={feature.id}
-              className={
-                page === feature.id
-                  ? "nav-link active"
-                  : "nav-link"
-              }
-              onClick={() => navigate(feature.id)}
-            >
-              {feature.title}
-            </button>
-          ))}
-        </nav>
-      </header>
-
-      {/* Main page content */}
-      <main
-        id="main-content"
-        className="main-content"
-        tabIndex="-1"
-      >
-        {page === "home" && (
-          <section className="home-page">
-            {/* Welcome section */}
-            <div className="welcome-hero">
-              <div className="hero-copy">
-                <p className="eyebrow">
-                  <span className="status-dot" />
-                  YOUR PERSONAL LEARNING SPACE
-                </p>
-
-                <h1>
-                  Learn better.
-                  <br />
-                  <span>One step at a time.</span>
-                </h1>
-
-                <p className="hero-description">
-                  Ask questions, practice with quizzes, plan
-                  your study time, and learn from your PDF
-                  materials — all in one place.
-                </p>
-
-                <button
-                  className="primary-button hero-button"
-                  onClick={() => navigate("chat")}
-                >
-                  Start learning{" "}
-                  <span aria-hidden="true">→</span>
-                </button>
-
-                <p className="small-note">
-                  Simple tools. Clear steps. Better learning.
-                </p>
-              </div>
-
-              {/* Decorative illustration */}
-              <div className="hero-art" aria-hidden="true">
-                <div className="art-glow" />
-
-                <div className="art-card art-card-main">
-                  <span className="art-sparkle">✦</span>
-                  <span className="art-robot">🤖</span>
-
-                  <strong>Let's learn!</strong>
-
-                  <small>Your AI study companion</small>
-
-                  <div className="art-lines">
-                    <i />
-                    <i />
-                    <i />
-                  </div>
-                </div>
-
-                <div className="floating-chip chip-top">
-                  ✧ Stay curious
-                </div>
-
-                <div className="floating-chip chip-bottom">
-                  ✓ Keep progressing
-                </div>
-              </div>
-            </div>
-
-            {/* Feature cards */}
-            <section
-              className="features-section"
-              aria-labelledby="features-title"
-            >
-              <div className="section-heading">
-                <div>
-                  <p className="eyebrow">
-                    YOUR LEARNING TOOLKIT
-                  </p>
-
-                  <h2 id="features-title">
-                    What would you like to do?
-                  </h2>
-                </div>
-
-                <p>Choose a tool to get started.</p>
-              </div>
-
-              <div className="feature-grid">
-                {FEATURES.map((feature) => (
-                  <button
-                    className={`feature-card feature-${feature.color}`}
-                    key={feature.id}
-                    onClick={() => navigate(feature.id)}
-                  >
-                    <span
-                      className="feature-icon"
-                      aria-hidden="true"
-                    >
-                      {feature.icon}
-                    </span>
-
-                    <span className="feature-title">
-                      {feature.title}
-                    </span>
-
-                    <span className="feature-text">
-                      {feature.text}
-                    </span>
-
-                    <span className="feature-action">
-                      Open tool{" "}
-                      <span aria-hidden="true">↗</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </section>
-          </section>
-        )}
-
-            {/* AI STUDY CHAT */}
-        {page === "chat" && (
-          <PageShell
-            title="AI Study Chat"
-            subtitle="Ask questions and learn at your own pace."
-            icon="🤖"
-            onBack={() => navigate("home")}
+          <button
+            type="button"
+            className="feature-card feature-quiz"
+            onClick={() => goTo("quiz")}
           >
-            <section className="panel chat-panel">
-              <div className="chat-toolbar">
-                <div>
-                  <span className="status-dot" /> Assistant ready
-                  <p className="muted">
-                    Ask one question at a time for a clear answer.
-                  </p>
-                </div>
+            <span className="feature-icon">📝</span>
+            <h3>Quiz Generator</h3>
+            <p>
+              Create topic-based quizzes and check your knowledge with
+              instant scoring.
+            </p>
+            <span className="feature-link">Practice now →</span>
+          </button>
 
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={() => {
-                    setMessages([
-                      {
-                        role: "assistant",
-                        content:
-                          "Hi! I'm PADDIPS BOT. What would you like to learn today? ✨",
-                      },
-                    ]);
-                    setChatError("");
-                  }}
-                >
-                  New chat
-                </button>
-              </div>
-
-              <div
-                className="chat-messages"
-                aria-live="polite"
-                aria-relevant="additions text"
-              >
-                {messages.map((message, index) => (
-                  <div
-                    className={`chat-row ${
-                      message.role === "user" ? "chat-row-user" : ""
-                    }`}
-                    key={`${index}-${message.role}`}
-                  >
-                    {message.role !== "user" && (
-                      <span className="message-avatar" aria-hidden="true">
-                        ✦
-                      </span>
-                    )}
-
-                    <div
-                      className={`chat-bubble ${
-                        message.role === "user"
-                          ? "user-bubble"
-                          : "bot-bubble"
-                      }`}
-                    >
-                      <span className="message-author">
-                        {message.role === "user" ? "You" : "PADDIPS BOT"}
-                      </span>
-                      <p>{message.content}</p>
-                    </div>
-                  </div>
-                ))}
-
-                {chatLoading && (
-                  <Loading text="Preparing your answer..." />
-                )}
-
-                <div ref={chatEndRef} />
-              </div>
-
-              <Notice type="error">{chatError}</Notice>
-
-              <div className="suggestions" aria-label="Suggested questions">
-                <button
-                  type="button"
-                  onClick={() =>
-                    sendMessage("Explain Python in simple words")
-                  }
-                >
-                  Explain Python
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => sendMessage("What is DBMS?")}
-                >
-                  What is DBMS?
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    sendMessage("Teach me JavaScript basics")
-                  }
-                >
-                  JavaScript basics
-                </button>
-              </div>
-
-              <form
-                className="chat-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  sendMessage();
-                }}
-              >
-                <label className="sr-only" htmlFor="chat-input">
-                  Your message
-                </label>
-
-                <textarea
-                  id="chat-input"
-                  className="text-input chat-textarea"
-                  placeholder="Type your question here..."
-                  value={chatInput}
-                  onChange={(event) => setChatInput(event.target.value)}
-                  rows={2}
-                  maxLength={4000}
-                  disabled={chatLoading}
-                  onKeyDown={(event) => {
-                    if (
-                      event.key === "Enter" &&
-                      !event.shiftKey &&
-                      !event.nativeEvent.isComposing
-                    ) {
-                      event.preventDefault();
-                      sendMessage();
-                    }
-                  }}
-                />
-
-                <button
-                  className="primary-button send-button"
-                  type="submit"
-                  disabled={chatLoading || !chatInput.trim()}
-                >
-                  {chatLoading ? "Sending..." : "Send ↑"}
-                </button>
-              </form>
-
-              <p className="input-hint">
-                Press Enter to send · Shift + Enter for a new line
-              </p>
-            </section>
-          </PageShell>
-        )}
-
-        {/* PRACTICE QUIZ */}
-        {page === "quiz" && (
-          <PageShell
-            title="Practice Quiz"
-            subtitle="Practice a topic and review your answers."
-            icon="📝"
-            onBack={() => navigate("home")}
+          <button
+            type="button"
+            className="feature-card feature-plan"
+            onClick={() => goTo("study-plan")}
           >
-            <section className="panel">
-              {!quizQuestions.length && (
-                <form className="form-stack" onSubmit={generateQuiz}>
-                  <div className="field">
-                    <label htmlFor="quiz-topic">
-                      What topic do you want to practice?
-                    </label>
+            <span className="feature-icon">📅</span>
+            <h3>Study Planner</h3>
+            <p>
+              Organize your learning with a study plan tailored to your
+              subject and timeline.
+            </p>
+            <span className="feature-link">Plan your studies →</span>
+          </button>
 
-                    <input
-                      id="quiz-topic"
-                      className="text-input"
-                      value={quizTopic}
-                      onChange={(event) => setQuizTopic(event.target.value)}
-                      placeholder="e.g. Python, DBMS, Cloud Computing"
-                      maxLength={120}
-                      required
-                    />
-                  </div>
-
-                  <div className="field">
-                    <label htmlFor="quiz-count">
-                      Number of questions
-                    </label>
-
-                    <select
-                      id="quiz-count"
-                      className="text-input"
-                      value={quizCount}
-                      onChange={(event) => setQuizCount(event.target.value)}
-                    >
-                      <option value="5">5 questions</option>
-                      <option value="10">10 questions</option>
-                      <option value="15">15 questions</option>
-                    </select>
-                  </div>
-
-                  <Notice type="error">{quizError}</Notice>
-
-                  <button
-                    className="primary-button"
-                    type="submit"
-                    disabled={quizLoading}
-                  >
-                    {quizLoading ? "Creating quiz..." : "Generate quiz →"}
-                  </button>
-
-                  {quizLoading && (
-                    <Loading text="Preparing your questions..." />
-                  )}
-                </form>
-              )}
-
-              {quizQuestions.length > 0 && (
-                <form className="form-stack" onSubmit={submitQuiz}>
-                  <div className="result-banner">
-                    <p className="eyebrow">YOUR QUIZ</p>
-                    <h2>{quizTopic}</h2>
-                    <p className="muted">
-                      {quizQuestions.length} questions · Take your time
-                    </p>
-                  </div>
-
-                  <Notice type="info">{quizNotice}</Notice>
-
-                  {quizQuestions.map((question, index) => {
-                    const options = getOptions(question);
-                    const correct = getCorrectAnswer(question);
-
-                    return (
-                      <fieldset
-                        className="question-card"
-                        key={index}
-                        disabled={quizSubmitted}
-                      >
-                        <legend>
-                          {index + 1}. {getQuestionText(question)}
-                        </legend>
-
-                        <div className="option-list">
-                          {options.map((option) => {
-                            const selected =
-                              String(quizAnswers[index]) ===
-                              String(option.value);
-
-                            const isCorrect =
-                              quizSubmitted &&
-                              correct !== null &&
-                              answerMatches(
-                                option.value,
-                                correct,
-                                options
-                              );
-
-                            const isWrong =
-                              quizSubmitted && selected && !isCorrect;
-
-                            return (
-                              <label
-                                className={`quiz-option ${
-                                  selected ? "selected" : ""
-                                } ${isCorrect ? "correct" : ""} ${
-                                  isWrong ? "incorrect" : ""
-                                }`}
-                                key={`${index}-${option.label}-${option.text}`}
-                              >
-                                <input
-                                  type="radio"
-                                  name={`question-${index}`}
-                                  value={String(option.value)}
-                                  checked={selected}
-                                  onChange={() =>
-                                    setQuizAnswers((current) => ({
-                                      ...current,
-                                      [index]: option.value,
-                                    }))
-                                  }
-                                />
-
-                                <span className="option-letter">
-                                  {option.label}
-                                </span>
-
-                                <span>{option.text}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-
-                        {quizSubmitted && correct !== null && (
-                          <p className="answer-feedback">
-                            Correct answer: {String(correct)}
-                          </p>
-                        )}
-                      </fieldset>
-                    );
-                  })}
-
-                  {quizSubmitted ? (
-                    <div className="score-card" role="status">
-                      <span className="score-icon" aria-hidden="true">
-                        🎉
-                      </span>
-
-                      <h2>Quiz complete!</h2>
-
-                      <p>
-                        Your score:{" "}
-                        <strong>
-                          {quizScore} / {quizQuestions.length}
-                        </strong>
-                      </p>
-
-                      <button
-                        className="primary-button"
-                        type="button"
-                        onClick={resetQuiz}
-                      >
-                        Try another quiz
-                      </button>
-                    </div>
-                  ) : (
-                    <button className="primary-button" type="submit">
-                      Submit answers
-                    </button>
-                  )}
-                </form>
-              )}
-            </section>
-          </PageShell>
-        )}
-
-        {/* STUDY PLANNER */}
-        {page === "planner" && (
-          <PageShell
-            title="Study Planner"
-            subtitle="Build a learning schedule around your goals."
-            icon="📅"
-            onBack={() => navigate("home")}
+          <button
+            type="button"
+            className="feature-card feature-pdf"
+            onClick={() => goTo("pdf")}
           >
-            <section className="panel">
-              <form className="form-stack" onSubmit={generatePlan}>
-                <div className="field">
-                  <label htmlFor="plan-topic">
-                    What do you want to learn?
-                  </label>
+            <span className="feature-icon">📚</span>
+            <h3>PDF Learning Assistant</h3>
+            <p>
+              Upload your PDF learning materials and view the backend
+              processing result.
+            </p>
+            <span className="feature-link">Explore materials →</span>
+          </button>
+        </div>
+      </section>
 
-                  <input
-                    id="plan-topic"
-                    className="text-input"
-                    value={planTopic}
-                    onChange={(event) => setPlanTopic(event.target.value)}
-                    placeholder="e.g. Cloud Computing, Java, GATE CS"
-                    maxLength={120}
-                    required
-                  />
-                </div>
-
-                <div className="field">
-                  <label htmlFor="plan-days">
-                    How many days do you have?
-                  </label>
-
-                  <select
-                    id="plan-days"
-                    className="text-input"
-                    value={planDays}
-                    onChange={(event) => setPlanDays(event.target.value)}
-                  >
-                    <option value="1">1 day</option>
-                    <option value="7">7 days</option>
-                    <option value="14">14 days</option>
-                    <option value="30">30 days</option>
-                    <option value="45">45 days</option>
-                    <option value="60">60 days</option>
-                  </select>
-
-                  <p className="field-hint">
-                    Choose between 1 and 60 days.
-                  </p>
-                </div>
-
-                <Notice type="error">{planError}</Notice>
-
-                <button
-                  className="primary-button"
-                  type="submit"
-                  disabled={planLoading}
-                >
-                  {planLoading
-                    ? "Building your plan..."
-                    : "Create my study plan →"}
-                </button>
-
-                {planLoading && (
-                  <Loading text="Organizing your schedule..." />
-                )}
-              </form>
-
-              {studyPlan && (
-                <section
-                  className="generated-result"
-                  aria-labelledby="plan-result-title"
-                >
-                  <div className="result-banner">
-                    <p className="eyebrow">YOUR PERSONAL PLAN</p>
-                    <h2 id="plan-result-title">{planTopic}</h2>
-                  </div>
-
-                  <div className="result-content">
-                    {typeof studyPlan === "string" ? (
-                      <p className="preserve-lines">{studyPlan}</p>
-                    ) : (
-                      <pre className="result-pre">
-                        {JSON.stringify(studyPlan, null, 2)}
-                      </pre>
-                    )}
-                  </div>
-                </section>
-              )}
-            </section>
-          </PageShell>
-        )}
-        
-        {/* PDF STUDY ASSISTANT */}
-        {page === "pdf" && (
-          <PageShell
-            title="PDF Study Assistant"
-            subtitle="Upload your study material and ask questions about it."
-            icon="📚"
-            onBack={() => navigate("home")}
-          >
-            <section className="panel">
-              <form className="form-stack" onSubmit={uploadPdf}>
-                <div className="upload-zone">
-                  <span className="upload-icon" aria-hidden="true">
-                    ↑
-                  </span>
-
-                  <h2>Choose your PDF</h2>
-
-                  <p className="muted">
-                    PDF format only · Maximum file size 10 MB
-                  </p>
-
-                  <input
-                    ref={fileInputRef}
-                    id="pdf-file"
-                    type="file"
-                    accept=".pdf,application/pdf"
-                    className="file-input"
-                    onChange={choosePdf}
-                    aria-describedby="pdf-file-help"
-                  />
-
-                  <label
-                    htmlFor="pdf-file"
-                    className="secondary-button file-picker"
-                  >
-                    Browse files
-                  </label>
-
-                  <p id="pdf-file-help" className="field-hint">
-                    {pdfFile
-                      ? `Selected: ${pdfFile.name} (${(
-                          pdfFile.size /
-                          1024 /
-                          1024
-                        ).toFixed(2)} MB)`
-                      : "No file selected yet."}
-                  </p>
-                </div>
-
-                <Notice type="error">{pdfError}</Notice>
-                <Notice type="success">{pdfNotice}</Notice>
-
-                <button
-                  className="primary-button"
-                  type="submit"
-                  disabled={pdfLoading || !pdfFile}
-                >
-                  {pdfLoading ? "Uploading..." : "Upload PDF"}
-                </button>
-
-                {pdfLoading && (
-                  <Loading text="Processing your document..." />
-                )}
-              </form>
-
-              {pdfUploaded && (
-                <form
-                  className="form-stack pdf-question-form"
-                  onSubmit={askAboutPdf}
-                >
-                  <div className="field">
-                    <label htmlFor="pdf-question">
-                      Ask a question about your material
-                    </label>
-
-                    <textarea
-                      id="pdf-question"
-                      className="text-input"
-                      rows={3}
-                      value={pdfQuestion}
-                      onChange={(event) =>
-                        setPdfQuestion(event.target.value)
-                      }
-                      placeholder="e.g. Summarize chapter one in simple words."
-                      maxLength={2000}
-                      required
-                    />
-                  </div>
-
-                  <button
-                    className="primary-button"
-                    type="submit"
-                    disabled={pdfLoading || !pdfQuestion.trim()}
-                  >
-                    {pdfLoading
-                      ? "Finding an answer..."
-                      : "Ask about this PDF →"}
-                  </button>
-                </form>
-              )}
-
-              {pdfAnswer && (
-                <section
-                  className="answer-card"
-                  aria-labelledby="pdf-answer-title"
-                  aria-live="polite"
-                >
-                  <p className="eyebrow">YOUR ANSWER</p>
-
-                  <h2 id="pdf-answer-title">
-                    Let's understand it
-                  </h2>
-
-                  <p className="preserve-lines">{pdfAnswer}</p>
-                </section>
-              )}
-            </section>
-          </PageShell>
-        )}
-      </main>
-
-      {/* FOOTER */}
-      <footer className="footer">
+      <section className="learning-banner">
+        <div>
+          <span className="eyebrow">YOUR NEXT STEP</span>
+          <h2>Small steps. Big progress.</h2>
+          <p>Choose a tool and start learning at your own pace.</p>
+        </div>
         <button
-          className="footer-brand"
           type="button"
-          onClick={() => navigate("home")}
+          className="primary-button"
+          onClick={() => goTo("chat")}
         >
-          ✦ PADDIPS BOT
+          Let's Begin →
         </button>
+      </section>
 
-        <p>Keep learning. Keep growing. ✨</p>
-
-        <p className="footer-small">
-          AI can make mistakes. Verify important information with trusted sources.
-        </p>
+      <footer className="site-footer">
+        <div className="footer-brand">🤖 PADDIPS BOT</div>
+        <p>AI Learning Assistant</p>
+        <p>Learn something new every day.</p>
+        <span>© {new Date().getFullYear()} PADDIPS BOT</span>
       </footer>
-    </div>
+    </main>
   );
-                  }
-                    
+}
+  
