@@ -1,276 +1,275 @@
-import { useState, useRef, useEffect } from "react";
-import "./Chat.css";
 
-const API_URL =
-  import.meta.env.VITE_API_URL ||
-  "https://paddips-bot.onrender.com";
+/* PADDIPS BOT — Premium AI Chat */
 
-const suggestions = [
-  "Explain cloud computing simply",
-  "Teach me Python basics",
-  "Prepare me for an interview",
-  "Explain this topic with examples",
-];
-
-export default function Chat() {
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const messagesEndRef = useRef(null);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({
-      behavior: "smooth",
-    });
-  }, [messages, loading]);
-
-  async function sendMessage(text = input) {
-    const message = text.trim();
-
-    if (!message || loading) return;
-
-    const updatedMessages = [
-      ...messages,
-      { role: "user", content: message },
-    ];
-
-    setMessages(updatedMessages);
-    setInput("");
-    setLoading(true);
-    setError("");
-
-    try {
-      const response = await fetch(`${API_URL}/api/chat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message,
-          history: messages.map((item) => ({
-            role: item.role,
-            content: item.content,
-          })),
-        }),
-      });
-
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(
-          data.error || data.message || `Request failed (${response.status})`
-        );
-      }
-
-      const reply =
-        data.reply ||
-        data.response ||
-        data.answer ||
-        data.message;
-
-      if (!reply || typeof reply !== "string") {
-        throw new Error(
-          "The backend did not return a text reply. Check your backend API response format."
-        );
-      }
-
-      setMessages((previous) => [
-        ...previous,
-        { role: "assistant", content: reply },
-      ]);
-    } catch (err) {
-      setError(
-        err.message ||
-          "Unable to connect to PADDIPS BOT. Please try again."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function clearChat() {
-    if (loading) return;
-    setMessages([]);
-    setError("");
-    setInput("");
-  }
-
-  return (
-    <main className="paddips-chat-page">
-      <div className="paddips-chat-container">
-        <header className="paddips-chat-header">
-          <div className="paddips-brand">
-            <div className="paddips-brand-icon">✦</div>
-            <div>
-              <h1>PADDIPS BOT</h1>
-              <p>YOUR AI LEARNING ASSISTANT</p>
-            </div>
-          </div>
-
-          <div className="paddips-status">
-            <span className="paddips-status-dot" />
-            AI LEARNING SPACE
-          </div>
-        </header>
-
-        <section className="paddips-chat-intro">
-          <span className="paddips-intro-label">
-            ✦ PERSONALIZED LEARNING
-          </span>
-
-          <h2>
-            Learn anything.
-            <br />
-            <span>One question at a time.</span>
-          </h2>
-
-          <p>
-            Welcome to PADDIPS BOT. Ask questions, understand difficult
-            concepts, practise programming, and prepare for interviews
-            with your AI learning assistant.
-          </p>
-        </section>
-
-        <section className="paddips-chat-panel">
-          <div className="paddips-chat-toolbar">
-            <div>
-              <strong>✦ PADDIPS AI Assistant</strong>
-              <p>Ask anything you want to learn</p>
-            </div>
-
-            <button
-              className="paddips-clear-button"
-              onClick={clearChat}
-              disabled={loading || messages.length === 0}
-              type="button"
-            >
-              Clear chat
-            </button>
-          </div>
-
-          <div className="paddips-messages">
-            {messages.length === 0 ? (
-              <div className="paddips-empty-state">
-                <div className="paddips-empty-icon">✧</div>
-
-                <h3>What would you like to learn today?</h3>
-
-                <p>
-                  Ask a question or choose one of the suggestions
-                  below to start your learning journey.
-                </p>
-
-                <div className="paddips-suggestions">
-                  {suggestions.map((suggestion) => (
-                    <button
-                      key={suggestion}
-                      type="button"
-                      disabled={loading}
-                      onClick={() => sendMessage(suggestion)}
-                    >
-                      {suggestion}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              messages.map((item, index) => (
-                <div
-                  key={`${index}-${item.role}`}
-                  className={`paddips-message-row ${
-                    item.role === "user" ? "user" : ""
-                  }`}
-                >
-                  <div className="paddips-message-avatar">
-                    {item.role === "user" ? "YOU" : "AI"}
-                  </div>
-
-                  <div className="paddips-message-content">
-                    <strong>
-                      {item.role === "user"
-                        ? "YOU"
-                        : "PADDIPS ASSISTANT"}
-                    </strong>
-
-                    <div className="paddips-message-bubble">
-                      {item.content}
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-
-            {loading && (
-              <div className="paddips-message-row">
-                <div className="paddips-message-avatar">AI</div>
-
-                <div className="paddips-message-content">
-                  <strong>PADDIPS ASSISTANT</strong>
-
-                  <div className="paddips-thinking">
-                    <span />
-                    <span />
-                    <span />
-                    <small>Thinking and preparing your answer...</small>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div ref={messagesEndRef} />
-          </div>
-
-          {error && (
-            <div className="paddips-error-notice">
-              <strong>Unable to get a response</strong>
-              <p>{error}</p>
-              <button
-                type="button"
-                onClick={() => sendMessage(
-                  messages.filter((item) => item.role === "user").at(-1)?.content || ""
-                )}
-              >
-                Try again
-              </button>
-            </div>
-          )}
-
-          <form
-            className="paddips-chat-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              sendMessage();
-            }}
-          >
-            <input
-              type="text"
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              placeholder="Ask PADDIPS anything..."
-              disabled={loading}
-              aria-label="Message"
-            />
-
-            <button
-              className="paddips-send-button"
-              type="submit"
-              disabled={loading || !input.trim()}
-            >
-              {loading ? "Thinking..." : "Send ↗"}
-            </button>
-          </form>
-
-          <p className="paddips-chat-note">
-            PADDIPS BOT • AI-generated answers may need verification.
-          </p>
-        </section>
-
-        <footer className="paddips-chat-footer">
-          <span>✦ PADDIPS BOT</span>
-          <span>LEARN • PRACTISE • GROW</span>
-        </footer>
-      </div>
-    </main>
-  );
+.paddips-chat-page {
+  min-height: 100vh;
+  padding: 30px 18px;
+  color: #f7f5ff;
+  background:
+    radial-gradient(ellipse at 10% 0%, #7138ad35, transparent 38%),
+    radial-gradient(ellipse at 95% 70%, #087e9b28, transparent 35%),
+    #090b1b;
 }
+
+.paddips-chat-container {
+  width: min(100%, 1000px);
+  margin: 0 auto;
+  animation: chatEntrance 0.65s ease both;
+}
+
+.paddips-chat-page * {
+  box-sizing: border-box;
+}
+
+.paddips-chat-page button,
+.paddips-chat-page input,
+.paddips-chat-page textarea {
+  font: inherit;
+}
+
+.paddips-chat-page button {
+  cursor: pointer;
+  transition: 0.25s ease;
+}
+
+.paddips-chat-page button:hover {
+  transform: translateY(-2px);
+}
+
+.paddips-chat-page button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.paddips-chat-page .chat-header,
+.paddips-chat-page .chat-toolbar {
+  border: 1px solid rgba(167, 139, 250, 0.2);
+  background: rgba(23, 25, 52, 0.78);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  padding: 18px 22px;
+}
+
+.paddips-chat-page .chat-header {
+  margin-bottom: 24px;
+}
+
+.paddips-chat-page .chat-brand {
+  color: #f7f5ff;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.paddips-chat-page .chat-status {
+  color: #86efac;
+}
+
+.paddips-chat-page .chat-intro {
+  padding: 28px 0;
+  text-align: center;
+}
+
+.paddips-chat-page .chat-intro h1 {
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  line-height: 1.12;
+  letter-spacing: -0.05em;
+  background: linear-gradient(100deg, #ffffff, #c4b5fd 48%, #67e8f9);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.paddips-chat-page .chat-intro p,
+.paddips-chat-page .chat-footer {
+  color: #aaaac8;
+}
+
+.paddips-chat-page .chat-panel {
+  overflow: hidden;
+  border: 1px solid rgba(167, 139, 250, 0.24);
+  border-radius: 24px;
+  background: rgba(16, 18, 41, 0.88);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(20px);
+}
+
+.paddips-chat-page .chat-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  border-bottom: 1px solid rgba(167, 139, 250, 0.16);
+  border-radius: 0;
+}
+
+.paddips-chat-page .chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 320px;
+  max-height: 55vh;
+  overflow-y: auto;
+  padding: 24px;
+  scroll-behavior: smooth;
+}
+
+.paddips-chat-page .chat-bubble {
+  width: fit-content;
+  max-width: min(85%, 720px);
+  padding: 14px 17px;
+  border: 1px solid rgba(167, 139, 250, 0.16);
+  border-radius: 18px;
+  color: #f5f3ff;
+  background: linear-gradient(
+    135deg,
+    rgba(39, 41, 78, 0.96),
+    rgba(25, 29, 57, 0.96)
+  );
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  animation: bubbleIn 0.3s ease both;
+}
+
+.paddips-chat-page .chat-bubble.user {
+  align-self: flex-end;
+  border-color: rgba(103, 232, 249, 0.22);
+  border-bottom-right-radius: 5px;
+  background: linear-gradient(135deg, #6840b5, #4f46a5);
+}
+
+.paddips-chat-page .chat-bubble.assistant,
+.paddips-chat-page .chat-bubble.ai {
+  align-self: flex-start;
+  border-bottom-left-radius: 5px;
+}
+
+.paddips-chat-page .chat-suggestions,
+.paddips-chat-page .suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 0 22px 20px;
+}
+
+.paddips-chat-page .chat-suggestions button,
+.paddips-chat-page .suggestions button {
+  padding: 10px 14px;
+  border: 1px solid rgba(167, 139, 250, 0.25);
+  border-radius: 999px;
+  color: #ded8ff;
+  background: rgba(139, 92, 246, 0.09);
+}
+
+.paddips-chat-page .chat-suggestions button:hover,
+.paddips-chat-page .suggestions button:hover {
+  border-color: #67e8f9;
+  background: rgba(103, 232, 249, 0.1);
+}
+
+.paddips-chat-page .chat-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 18px;
+  border-top: 1px solid rgba(167, 139, 250, 0.16);
+  background: rgba(10, 12, 29, 0.78);
+}
+
+.paddips-chat-page .chat-form input,
+.paddips-chat-page .chat-form textarea {
+  flex: 1;
+  min-width: 0;
+  resize: vertical;
+  border: 1px solid rgba(167, 139, 250, 0.26);
+  border-radius: 15px;
+  padding: 14px 16px;
+  color: white;
+  background: #11132a;
+  outline: none;
+}
+
+.paddips-chat-page .chat-form input:focus,
+.paddips-chat-page .chat-form textarea:focus {
+  border-color: #67e8f9;
+  box-shadow: 0 0 0 4px rgba(103, 232, 249, 0.07);
+}
+
+.paddips-chat-page .chat-form button {
+  min-height: 48px;
+  padding: 0 21px;
+  border: 0;
+  border-radius: 14px;
+  color: white;
+  font-weight: 750;
+  background: linear-gradient(110deg, #8b5cf6, #6366f1, #0891b2);
+  box-shadow: 0 6px 22px rgba(124, 58, 237, 0.25);
+}
+
+.paddips-chat-page .chat-form button:hover {
+  box-shadow: 0 8px 28px rgba(124, 58, 237, 0.4);
+}
+
+.paddips-chat-page .error-notice {
+  margin: 12px 18px;
+  padding: 12px 15px;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  border-radius: 12px;
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.2);
+}
+
+.paddips-chat-page .chat-footer {
+  padding: 18px 0;
+  text-align: center;
+  font-size: 0.85rem;
+}
+
+@keyframes chatEntrance {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes bubbleIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 600px) {
+  .paddips-chat-page {
+    padding: 14px 10px;
+  }
+
+  .paddips-chat-page .chat-messages {
+    padding: 15px;
+    max-height: 58vh;
+  }
+
+  .paddips-chat-page .chat-bubble {
+    max-width: 94%;
+  }
+
+  .paddips-chat-page .chat-form {
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .paddips-chat-page .chat-form button {
+    padding: 0 14px;
+  }
+
+  .paddips-chat-page .chat-header,
+  .paddips-chat-page .chat-toolbar {
+    padding: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .paddips-chat-page *,
+  .paddips-chat-page *::before,
+  .paddips-chat-page *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  }
