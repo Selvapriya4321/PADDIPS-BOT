@@ -12,8 +12,7 @@ const app = express();
 // ==================================================
 
 const PORT = process.env.PORT || 5000;
-const GEMINI_MODEL =
-  process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-6-luna";
 
 const ALLOWED_ORIGINS = [
   "https://selvapriya4321.github.io",
@@ -21,8 +20,11 @@ const ALLOWED_ORIGINS = [
   "http://localhost:3000",
 ];
 
+const MAX_MESSAGE_LENGTH = 10000;
+const MAX_PDF_SIZE = 10 * 1024 * 1024;
+
 // ==================================================
-// 2. CORS
+// 2. CORS AND JSON
 // ==================================================
 
 app.use(
@@ -32,7 +34,6 @@ app.use(
         return callback(null, true);
       }
 
-      console.warn("Blocked CORS origin:", origin);
       return callback(new Error("Origin not allowed by CORS"));
     },
     methods: ["GET", "POST", "OPTIONS"],
@@ -43,85 +44,63 @@ app.use(
 app.use(express.json({ limit: "2mb" }));
 
 // ==================================================
-// 3. GEMINI AI HELPER
+// 3. OPENAI API HELPER
 // ==================================================
 
 async function generateAI(prompt, systemInstruction = "") {
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
-
-  // Never print the actual API key.
-  console.log(
-    "Gemini API key configured:",
-    Boolean(apiKey)
-  );
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
 
   if (!apiKey) {
     throw new Error(
-      "GEMINI_API_KEY is missing. Add it in Render Environment Variables."
+      "OPENAI_API_KEY is missing. Add it in Render Environment Variables."
     );
   }
 
-  const url =
-    `https://generativelanguage.googleapis.com/v1beta/models/` +
-    `${GEMINI_MODEL}:generateContent`;
-
-  const requestBody = {
-    contents: [
-      {
-        role: "user",
-        parts: [{ text: prompt }],
-      },
-    ],
-    generationConfig: {
-      temperature: 0.7,
-    },
-  };
-
-  if (systemInstruction) {
-    requestBody.systemInstruction = {
-      parts: [{ text: systemInstruction }],
-    };
-  }
-
-  const response = await fetch(url, {
+  const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
+      Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify(requestBody),
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      instructions:
+        systemInstruction ||
+        "You are PADDIPS BOT, a helpful AI learning assistant. Explain clearly with examples.",
+      input: prompt,
+      max_output_tokens: 5000,
+    }),
     signal: AbortSignal.timeout(90000),
   });
 
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    const apiMessage =
+    const message =
       data?.error?.message ||
-      `Gemini API request failed: HTTP ${response.status}`;
+      `OpenAI API request failed with HTTP ${response.status}`;
 
-    console.error("Gemini API error:", {
+    // Do not log the API key.
+    console.error("OpenAI API error:", {
       status: response.status,
-      message: apiMessage,
+      message,
     });
 
-    throw new Error(apiMessage);
+    throw new Error(message);
   }
 
-  const answer = (
-    data.candidates?.[0]?.content?.parts || []
-  )
+  const answer = (data.output || [])
+    .filter((item) => item.type === "message")
+    .flatMap((item) => item.content || [])
+    .filter((part) => part.type === "output_text")
     .map((part) => part.text || "")
-    .join("")
+    .join("\n")
     .trim();
 
   if (!answer) {
-    const reason =
-      data.promptFeedback?.blockReason ||
-      data.candidates?.[0]?.finishReason ||
-      "No text returned";
-
-    throw new Error(`Gemini returned no text: ${reason}`);
+    throw new Error(
+      `OpenAI returned no text. Response status: ${data.status || "unknown"}`
+    );
   }
 
   return answer;
@@ -135,8 +114,9 @@ async function generateAI(prompt, systemInstruction = "") {
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: "PADDIPS BOT Backend is Running",
-    model: GEMINI_MODEL,
+    message: "PADDIPS BOT OpenAI Backend is Running",
+    provider: "OpenAI",
+    model: OPENAI_MODEL,
     endpoints: [
       "POST /api/chat",
       "POST /api/quiz",
@@ -156,10 +136,7 @@ app.post("/api/chat", async (req, res) => {
   try {
     const { message } = req.body || {};
 
-    if (
-      typeof message !== "string" ||
-      !message.trim()
-    ) {
+    if (typeof message !== "string" || !message.trim()) {
       return res.status(400).json({
         success: false,
         reply: "Please enter a question.",
@@ -168,24 +145,19 @@ app.post("/api/chat", async (req, res) => {
 
     const userMessage = message.trim();
 
-    if (userMessage.length > 10000) {
+    if (userMessage.length > MAX_MESSAGE_LENGTH) {
       return res.status(400).json({
         success: false,
         reply: "Please keep your question under 10,000 characters.",
       });
     }
 
-    console.log(
-      "CHAT REQUEST:",
-      userMessage.slice(0, 100)
-    );
-
     const reply = await generateAI(
       userMessage,
       [
         "You are PADDIPS BOT, an AI Learning and Study Assistant.",
-        "Help students learn programming, computer science,",
-        "databases, mathematics, and academic subjects.",
+        "Help students learn programming, computer science, databases,",
+        "mathematics, and academic subjects.",
         "Explain in simple English with clear step-by-step instructions.",
         "Use practical examples when helpful.",
         "For beginners, avoid unnecessary jargon.",
@@ -219,15 +191,13 @@ app.post("/api/quiz", async (req, res) => {
 
     const selectedTopic =
       typeof topic === "string" && topic.trim()
-        ? topic.trim()
+        ? topic.trim().slice(0, 200)
         : "Computer Science";
 
     const requestedCount = Number(count);
     const allowedCounts = [5, 10, 15, 20];
 
-    const quizCount = allowedCounts.includes(
-      requestedCount
-    )
+    const quizCount = allowedCounts.includes(requestedCount)
       ? requestedCount
       : 5;
 
@@ -239,10 +209,10 @@ Rules:
 - Suitable for college students.
 - Exactly four options per question.
 - Exactly one correct answer.
-- The answer must match one of the options.
-- Return valid JSON only, without Markdown fences.
+- The answer must exactly match one option.
+- Return valid JSON only. Do not use Markdown fences.
 
-Required format:
+Required JSON format:
 {
   "questions": [
     {
@@ -256,7 +226,7 @@ Required format:
 
     const quizText = await generateAI(
       prompt,
-      "You are an educational quiz generator. Return valid JSON only."
+      "You are an educational quiz generator. Return one valid JSON object only, with no extra text."
     );
 
     const cleanedText = quizText
@@ -294,8 +264,7 @@ Required format:
         !Array.isArray(question.options) ||
         question.options.length !== 4 ||
         question.options.some(
-          (option) =>
-            typeof option !== "string" || !option.trim()
+          (option) => typeof option !== "string" || !option.trim()
         ) ||
         typeof question.answer !== "string" ||
         !question.options.includes(question.answer)
@@ -336,11 +305,12 @@ app.post("/api/study-plan", async (req, res) => {
 
     if (
       typeof subject !== "string" ||
-      !subject.trim()
+      !subject.trim() ||
+      subject.trim().length > 200
     ) {
       return res.status(400).json({
         success: false,
-        error: "Please enter a subject.",
+        error: "Please enter a subject of up to 200 characters.",
       });
     }
 
@@ -401,20 +371,18 @@ Return plain text, not JSON.
 
 // ==================================================
 // 8. PDF UPLOAD CONFIGURATION
-// Maximum file size: 10 MB
+// Maximum size: 10 MB
 // Form field name: material
 // ==================================================
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024,
+    fileSize: MAX_PDF_SIZE,
   },
   fileFilter: (req, file, callback) => {
     if (file.mimetype !== "application/pdf") {
-      return callback(
-        new Error("Only PDF files are supported.")
-      );
+      return callback(new Error("Only PDF files are supported."));
     }
 
     callback(null, true);
@@ -441,7 +409,7 @@ app.post(
       }
 
       console.log(
-        "PDF UPLOAD:",
+        "PDF upload received:",
         req.file.originalname,
         req.file.size,
         "bytes"
@@ -477,17 +445,11 @@ app.post(
         message: error.message,
       });
     } finally {
-      if (
-        parser &&
-        typeof parser.destroy === "function"
-      ) {
+      if (parser && typeof parser.destroy === "function") {
         try {
           await parser.destroy();
         } catch (error) {
-          console.error(
-            "PDF cleanup error:",
-            error.message
-          );
+          console.error("PDF cleanup error:", error.message);
         }
       }
     }
@@ -515,9 +477,7 @@ app.use((error, req, res, next) => {
     });
   }
 
-  if (
-    error.message === "Only PDF files are supported."
-  ) {
+  if (error.message === "Only PDF files are supported.") {
     return res.status(400).json({
       success: false,
       error: error.message,
@@ -531,7 +491,7 @@ app.use((error, req, res, next) => {
     });
   }
 
-  console.error("Unhandled Server Error:", error);
+  console.error("Unhandled Server Error:", error.message);
 
   return res.status(500).json({
     success: false,
@@ -547,6 +507,7 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log("==================================");
   console.log("PADDIPS BOT BACKEND STARTED");
   console.log(`Server running on port ${PORT}`);
-  console.log(`Gemini model: ${GEMINI_MODEL}`);
+  console.log(`OpenAI model: ${OPENAI_MODEL}`);
   console.log("==================================");
 });
+  
